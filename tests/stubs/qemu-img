@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Fake qemu-img: info / create / convert / snapshot, enough for the tests."""
+import json, shutil, sys
+a = sys.argv[1:]
+MAGIC = b"QFI\xfb"
+def fmt(path):
+    with open(path, "rb") as fh:
+        head = fh.read(4)
+    return "qcow2" if head == MAGIC else "raw"
+if a[0] == "info":
+    path = a[-1]
+    f = fmt(path)
+    if path.endswith(".vmdk"): f = "vmdk"
+    print(json.dumps({"format": f, "virtual-size": 1 << 30})); sys.exit(0)
+if a[0] == "create":
+    fm, path = a[a.index("-f") + 1], a[-2]
+    with open(path, "wb") as fh:
+        fh.write(MAGIC if fm == "qcow2" else b"")
+    sys.exit(0)
+if a[0] == "convert":
+    dst, src = a[-1], a[-2]
+    with open(dst, "wb") as out:
+        out.write(MAGIC)
+    sys.exit(0)
+if a[0] == "snapshot":
+    print("Snapshot list:\nID TAG\n1 snap1" if "-l" in a else ""); sys.exit(0)
+sys.exit(1)

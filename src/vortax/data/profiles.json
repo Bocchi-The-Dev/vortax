@@ -1,0 +1,122 @@
+{
+  "_comment": "Hardware presets for guests that break on modern QEMU defaults. Sourced from the Computernewb QEMU install guides (legacy Windows) and Batocera's own runQemu.sh. Keys: cpu (null = QEMU default, 'host' becomes 'max' under TCG), machine (-M value without accel), vga (QEMU args), vga_modes (alternative vga sets selectable with --gpu-mode), nic (null/'none' = no network), ram_mb (omit = use the run setting, null = do not pass -m), disk (size for a freshly created disk), kvm (true = use KVM when available), boot (cdrom|floppy), rtc, extra (raw args), hostfwd (host->guest TCP forwards, bound to 127.0.0.1).",
+  "profiles": {
+    "winnt4": {
+      "name": "Windows NT 4.0",
+      "cpu": "pentium3",
+      "machine": "pc,hpet=off",
+      "vga": ["-device", "VGA"],
+      "nic": "pcnet",
+      "ram_mb": 128,
+      "disk": "4G",
+      "kvm": true,
+      "boot": "cdrom",
+      "rtc": "localtime",
+      "notes": "NT4 setup cannot format a partition larger than 4 GB, so the disk is capped there. Newer CPU models trigger a setup BSOD."
+    },
+    "winme": {
+      "name": "Windows Me",
+      "cpu": "pentium3",
+      "vga": ["-vga", "cirrus"],
+      "nic": "pcnet",
+      "ram_mb": 128,
+      "disk": "2G",
+      "kvm": false,
+      "boot": "cdrom",
+      "rtc": "localtime",
+      "notes": "Me is unstable under KVM (lockups, BSODs), so it always runs under TCG."
+    },
+    "win2000": {
+      "name": "Windows 2000",
+      "cpu": "host",
+      "vga": ["-vga", "cirrus"],
+      "nic": "pcnet",
+      "ram_mb": 256,
+      "disk": "10G",
+      "kvm": true,
+      "boot": "cdrom",
+      "rtc": "localtime"
+    },
+    "win98": {
+      "name": "Windows 98",
+      "cpu": "host",
+      "machine": "pc,hpet=off,acpi=on,usb=on",
+      "vga": ["-device", "VGA,vgamem_mb=64"],
+      "nic": "rtl8139",
+      "ram_mb": 256,
+      "disk": "4G",
+      "kvm": true,
+      "boot": "cdrom",
+      "rtc": "localtime",
+      "extra": ["-device", "usb-tablet"],
+      "notes": "A VXD/protection BSOD on first boot means the CPU model disagrees with Win98: pass --extra-qemu-args '-cpu core2duo' (Intel host) or '-cpu Opteron_G2' (AMD host). Use --bios-url with the SeaBIOS build that has CONFIG_PNPBIOS disabled if the PnP BIOS is misdetected as a PCI bus."
+    },
+    "win95": {
+      "name": "Windows 95",
+      "cpu": null,
+      "vga": ["-device", "cirrus-vga,vgamem_mb=16"],
+      "nic": "pcnet",
+      "ram_mb": null,
+      "disk": "700M",
+      "kvm": true,
+      "boot": "floppy",
+      "rtc": "localtime",
+      "notes": "Needs the patcher9x boot floppy (JHRobotics/patcher9x) via --floppy-url. The multi-part install is done by hand over VNC. No -m is passed, so QEMU's own default RAM applies unless you set one in --extra-qemu-args."
+    },
+    "win31": {
+      "name": "Windows 3.1",
+      "cpu": "486",
+      "vga": ["-vga", "vmware"],
+      "nic": "rtl8139",
+      "ram_mb": 16,
+      "disk": "150M",
+      "kvm": false,
+      "boot": "floppy",
+      "rtc": "localtime",
+      "extra": ["-usb", "-device", "usb-tablet", "-device", "sb16"],
+      "notes": "Installs from a DOS boot floppy plus install floppies; provide the DOS floppy via --floppy-url."
+    },
+    "win1x": {
+      "name": "Windows 1.x",
+      "cpu": null,
+      "vga": ["-vga", "std"],
+      "nic": "none",
+      "ram_mb": 1,
+      "disk": "32M",
+      "kvm": true,
+      "boot": "floppy",
+      "rtc": "localtime",
+      "notes": "DOS-hosted, installs from a single floppy; no network."
+    },
+    "win2x": {
+      "name": "Windows 2.x",
+      "cpu": null,
+      "vga": ["-vga", "std"],
+      "nic": "none",
+      "ram_mb": 1,
+      "disk": "32M",
+      "kvm": true,
+      "boot": "floppy",
+      "rtc": "localtime",
+      "notes": "Nearly identical to win1x."
+    },
+    "batocera": {
+      "name": "Batocera",
+      "cpu": "host",
+      "vga": ["-vga", "none", "-device", "virtio-gpu-pci"],
+      "vga_modes": {
+        "virtio": ["-vga", "none", "-device", "virtio-gpu-pci"],
+        "bochs": ["-vga", "none", "-device", "bochs-display"],
+        "std": ["-vga", "std"]
+      },
+      "nic": "e1000",
+      "disk": "8G",
+      "kvm": true,
+      "boot": "disk",
+      "rtc": "localtime",
+      "hostfwd": [{"proto": "tcp", "host": 5555, "guest": 22}],
+      "extra": ["-device", "intel-hda", "-device", "hda-duplex", "-device", "nec-usb-xhci"],
+      "notes": "Batocera's X server needs a DRM/KMS GPU device. 'virtio' matches the official runQemu.sh; if Xorg reports 'no screens found', try --gpu-mode bochs or std. The official script's USB joystick passthrough is not wired."
+    }
+  }
+}

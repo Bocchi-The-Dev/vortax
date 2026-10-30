@@ -1,0 +1,113 @@
+# Vortax
+
+Run and manage QEMU virtual machines from one small CLI and a web dashboard.
+Pick a system from the catalog, or bring your own ISO, disk image or archive. Vortax downloads it, prepares the
+disk, starts QEMU, and gives you VNC access, optionally through a tunnel.
+
+- **Standard library only.** No pip dependencies; the `.deb` is a few hundred KB.
+- **KVM when you have it, software emulation when you don't** (phones, most VPSes, CI runners).
+- **Safe defaults.** VNC and the QEMU monitor are local-only, passwords are random per VM and never appear in
+  process lists, tokens never go on a command line, archives are extracted with path checks.
+- **Testable.** The QEMU command is built by one pure function; `vortax selftest --boot` boots a generated
+  512-byte guest through the real pipeline to prove an install works.
+
+## Install
+
+Debian / Ubuntu (and Debian inside proot on a phone):
+
+```sh
+sudo apt install ./vortax_3.0.0~b1-1_all.deb      # pulls in qemu-system-x86 and qemu-utils
+vortax doctor
+```
+
+Anywhere with Python 3.9+ (Termux, other distros):
+
+```sh
+pipx install .            # or: pip install .
+pkg/apt install qemu ...  # you still need qemu-system-x86_64 and qemu-img (Termux: `pkg search qemu`)
+```
+
+Build the `.deb` yourself: `MAINTAINER="You <you@example.com>" packaging/build-deb.sh` → `dist/`.
+
+## Quick start
+
+```sh
+vortax list                                   # the catalog
+vortax plan --system ubuntu --boot-mode iso   # what would happen, and the exact QEMU command
+vortax run  --system mint --tunnel bore       # prepare, start, wait; Ctrl-C stops cleanly
+vortax start --system debian --name lab       # same, but returns immediately
+vortax info --name lab --show-password        # address and VNC password
+vortax stop --name lab
+vortax start --name lab                       # restart: reuses how it was launched
+```
+
+Your own media: `vortax run --source /path/to/any.iso` or a URL; `.7z .zip .tar.* .gz .xz .bz2 .zst` archives
+holding a disk image or an ISO are unpacked automatically, and the real disk format is detected (raw stays raw,
+qcow2 stays qcow2, anything else is converted).
+
+After an installer finishes, boot from the disk instead of the ISO: `vortax start --name lab --boot disk`.
+
+### Settings come from the environment too
+
+Every option has a `VORTAX_<NAME>` variable, which is how a script or CI job drives it without pasting values
+into shell source:
+
+```sh
+VORTAX_SYSTEM=bazzite VORTAX_BOOT_MODE=iso VORTAX_RAM_MB=4096 vortax run
+```
+
+Order: command line, then environment, then `~/.config/vortax/config.json`. `vortax config show` prints the
+result (passwords redacted). See [docs/MIGRATING.md](docs/MIGRATING.md) for the mapping from the old workflow.
+
+## Dashboard
+
+```sh
+vortax dashboard            # prints http://127.0.0.1:8765/#token=...
+```
+
+Overview with live CPU/RAM/disk, start/stop/reboot/kill, launching systems from the catalog with progress,
+VNC password reveal/change, tunnels, snapshots, browser VNC (needs `websockify` + `novnc`), storage cleanup,
+logs and a health page. It works at phone width. The token sits in the URL fragment, so it is never sent to the
+server or written to logs. Binding to a non-loopback address is possible (`--host`) but it is plain HTTP:
+prefer an SSH tunnel or Tailscale.
+
+## Hardware profiles
+
+`vortax profiles` lists presets for guests that break on modern defaults: Windows NT 4 / Me / 2000 / 98 / 95 /
+3.1 / 1.x / 2.x and Batocera (with `--gpu-mode virtio|bochs|std`). Retro catalog entries select their profile
+automatically. Windows Me always runs without KVM; floppy-install profiles need `--floppy-url`.
+
+## Tunnels and access
+
+| Option | Needs |
+| --- | --- |
+| `--tunnel bore` | the `bore` binary (`cargo install bore-cli`); `VORTAX_BORE_SERVER` for your own server |
+| `--tunnel ngrok` | `ngrok` and `NGROK_AUTHTOKEN` (or `vortax secret set ngrok_authtoken`) |
+| `--tunnel tailscale` | `tailscale` logged in, or `TAILSCALE_AUTHKEY` |
+| `--access rdp/nomachine/rustdesk/anydesk` | `sudo vortax access install <name>` (use `--dry-run` first) |
+
+VNC passwords are limited to 8 characters by the protocol, which is thin protection on a public tunnel. For
+anything beyond a quick test, prefer Tailscale or an SSH tunnel and keep VNC on loopback.
+
+## Adding systems
+
+Systems are data: add an entry to `src/vortax/data/systems.json` (or to your own
+`~/.config/vortax/systems.json`, which overrides it by id). `vortax check-links` HEAD-checks every URL.
+
+## Licensing and terms
+
+- **Windows media is not bundled.** Windows and the retro slots are templates; supply media you are licensed to use.
+- Running desktops for hours on **GitHub-hosted runners** is outside GitHub's Actions terms. This repository's CI
+  only builds, tests and briefly smoke-tests the package. Run VMs on your own hardware or VPS.
+- Respect the terms of any download host or tunnel service you use.
+
+## Development
+
+```sh
+PYTHONPATH=src python3 -m unittest discover -s tests -t .
+```
+
+The tests put fake `qemu-system-x86_64` and `qemu-img` (in `tests/stubs`) first on `PATH`, so they run anywhere.
+CI additionally installs the built `.deb` on a clean runner and runs `vortax selftest --boot` against real QEMU.
+
+MIT licensed.

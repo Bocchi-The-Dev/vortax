@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Fake QEMU for tests: serves an HMP monitor on the unix socket and mimics the bits Vortax uses."""
+import os, re, socket, sys, signal
+
+argv = sys.argv[1:]
+sock_path = serial = None
+disk = None
+for i, a in enumerate(argv):
+    if a == "-monitor":
+        sock_path = argv[i + 1].split(",")[0].split(":", 1)[1]
+    if a == "-serial" and argv[i + 1].startswith("file:"):
+        serial = argv[i + 1][5:]
+    if a == "-drive" and "file=" in argv[i + 1] and "media=disk" in argv[i + 1]:
+        disk = re.search(r"file=([^,]+)", argv[i + 1]).group(1)
+if os.environ.get("FAKE_QEMU_FAIL"):
+    sys.stderr.write("fake qemu: refusing to start\n"); sys.exit(3)
+if serial and disk:
+    with open(disk, "rb") as fh:
+        if b"VORTAX-OK" in fh.read(512):
+            with open(serial, "wb") as out:
+                out.write(b"VORTAX-OK\r\n")
+srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+srv.bind(sock_path); srv.listen(4)
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+while True:
+    conn, _ = srv.accept()
+    conn.sendall(b"QEMU 9.0.0 monitor - type 'help' for more information\r\n(qemu) ")
+    buf = b""
+    while b"\n" not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    cmd = buf.decode().strip()
+    reply = ""
+    if cmd.startswith("set_password vnc"):
+        with open(sock_path + ".vncpw", "w") as fh: fh.write(cmd.split(" ", 2)[2])
+    elif cmd == "info status":
+        reply = "VM status: running"
+    elif cmd.startswith("savevm") or cmd.startswith("loadvm") or cmd.startswith("delvm") or cmd == "system_reset":
+        reply = ""
+    elif cmd == "info snapshots":
+        reply = "ID TAG\r\n1 snap1"
+    elif cmd in ("quit", "system_powerdown"):
+        conn.sendall((cmd + "\r\n(qemu) ").encode()); conn.close()
+        try: os.unlink(sock_path)
+        except OSError: pass
+        sys.exit(0)
+    else:
+        reply = "unknown command: '%s'" % cmd
+    conn.sendall((cmd + "\r\n" + reply + ("\r\n" if reply else "") + "(qemu) ").encode())
+    conn.close()

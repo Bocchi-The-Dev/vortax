@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vortax</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="nav">
+    <div class="brand"><span class="logo"></span><b>Vortax</b><small id="ver"></small></div>
+    <nav id="tabs"></nav>
+  </aside>
+  <main>
+    <header>
+      <div><h1 id="title">Overview</h1><div class="sub" id="subtitle"></div></div>
+      <div class="clock" id="clock">--:--:--</div>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <section id="view"></section>
+  </main>
+</div>
+<div id="modal" class="modal" hidden><div class="sheet" id="sheet"></div></div>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

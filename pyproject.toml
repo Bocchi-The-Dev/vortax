@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vortax"
+dynamic = ["version"]
+description = "Run and manage QEMU virtual machines from a small CLI and a web dashboard"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []          # standard library only
+
+[project.scripts]
+vortax = "vortax.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "vortax.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vortax = ["data/*.json", "dashboard/static/*"]

@@ -1,0 +1,54 @@
+.TH VORTAX 1 "2026" "vortax" "User Commands"
+.SH NAME
+vortax \- run and manage QEMU virtual machines
+.SH SYNOPSIS
+.B vortax
+.I command
+[options]
+.SH DESCRIPTION
+Downloads a system from a built-in catalog (or uses your own ISO, disk image or archive),
+prepares its disk, starts it under QEMU and gives you VNC access, optionally through a tunnel.
+KVM is used when available, software emulation (TCG) otherwise.
+.SH COMMANDS
+.TP
+.B list, profiles
+Show the system catalog and the hardware presets.
+.TP
+.B plan
+Show what a run would do and the exact QEMU command. Changes nothing.
+.TP
+.B prepare, start, run
+Download and set up a disk; start the VM in the background; or start it and stay in the foreground.
+.TP
+.B stop, kill, reboot, status, info
+Control and inspect VMs.
+.TP
+.B password, snapshot, export, tunnel, rm
+Change the VNC password, manage qcow2 snapshots, export a disk (optionally with rclone), manage tunnels, delete a VM.
+.TP
+.B access
+Install optional host remote-access programs (rdp, nomachine, rustdesk, anydesk).
+.TP
+.B dashboard
+Serve the web dashboard (127.0.0.1:8765 by default, token protected).
+.TP
+.B doctor, selftest, check-links
+Check the installation; boot a tiny test guest; check catalog URLs.
+.SH ENVIRONMENT
+Every run setting can be given as VORTAX_<NAME> (VORTAX_SYSTEM, VORTAX_TUNNEL, VORTAX_PASSWORD, ...).
+Command line options override the environment, which overrides config.json.
+.TP
+.B VORTAX_HOME
+Data directory (default ~/.local/share/vortax).
+.TP
+.B VORTAX_CONFIG
+Config directory (default ~/.config/vortax).
+.TP
+.B TAILSCALE_AUTHKEY, NGROK_AUTHTOKEN
+Tunnel credentials. They are never placed on a command line.
+.SH FILES
+.TP
+.I ~/.config/vortax/systems.json, profiles.json
+Your own catalog entries; same schema as the built-in data, matched by id.
+.SH SEE ALSO
+qemu-system-x86_64(1), qemu-img(1)

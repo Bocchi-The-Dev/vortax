@@ -1,0 +1,575 @@
+"""Command line interface."""
+
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import shutil
+import signal
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+from . import __version__, access, catalog, disk, doctor, fetch, launch, paths, qemu, selftest, session, settings
+from .errors import VortaxError
+
+DESCRIPTION = """\
+Run and manage QEMU virtual machines: pick a system from the catalog (or bring your own
+ISO/disk), start it, reach it over VNC, optionally through a tunnel, snapshot and export it.
+
+Every run setting also reads a VORTAX_<NAME> environment variable (VORTAX_SYSTEM,
+VORTAX_TUNNEL, VORTAX_PASSWORD, ...). Command line beats environment beats config.json.
+"""
+
+
+def log(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------- argument plumbing
+
+
+def _add_run_options(p: argparse.ArgumentParser) -> None:
+    g = p.add_argument_group("what to run")
+    g.add_argument("--name", help="VM name; names its disk and state (default: vortax)")
+    g.add_argument("-s", "--system", help="catalog id, see `vortax list`")
+    g.add_argument("-m", "--boot-mode", choices=settings.BOOT_MODES, help="iso, qcow2 or img (default: auto)")
+    g.add_argument("--source", help="URL or local path to an ISO, disk image or archive (overrides the catalog)")
+    g = p.add_argument_group("hardware")
+    g.add_argument("--profile", help="hardware preset, see `vortax profiles`")
+    g.add_argument("--arch", choices=settings.ARCHES)
+    g.add_argument("--accel", choices=settings.ACCEL, help="auto uses KVM when available, else TCG")
+    g.add_argument("--firmware", choices=settings.FIRMWARE)
+    g.add_argument("--boot", choices=settings.BOOT_ORDER, help="disk ignores the installer ISO (use after installing)")
+    g.add_argument("--ram-mb", type=int)
+    g.add_argument("--vcpus", type=int)
+    g.add_argument("--disk-gb", type=int, help="size for a new blank disk (ISO installs)")
+    g.add_argument("--nic", help=f"network card model ({', '.join(settings.NICS)})")
+    g.add_argument("--gpu-mode", choices=settings.GPU_MODES, help="batocera profile: display device to try")
+    g.add_argument("--floppy-url", help="floppy image (.ima) URL or path for retro profiles")
+    g.add_argument("--bios-url", help="custom SeaBIOS build, BIOS mode only")
+    g.add_argument("--virtio-iso", help="path to virtio-win.iso to attach (Windows guests)")
+    g.add_argument("--forward", action="append", metavar="[tcp|udp:]HOST:GUEST",
+                   help="forward a host port (bound to 127.0.0.1) to the guest; repeatable")
+    g.add_argument("--extra-qemu-args", help="raw QEMU arguments appended verbatim")
+    g = p.add_argument_group("access")
+    g.add_argument("--vnc-display", type=int, help="VNC display number; port = 5900 + n (default: first free)")
+    g.add_argument("--vnc-bind", help="address VNC listens on (default 127.0.0.1)")
+    g.add_argument("--no-password", action="store_true", default=None,
+                   help="VNC without a password (only allowed on 127.0.0.1)")
+    g.add_argument("--tunnel", choices=settings.TUNNELS, help="expose VNC through bore, ngrok or tailscale")
+    g.add_argument("--access", choices=settings.ACCESS, help="host remote-access program (default: vnc)")
+    g.add_argument("--runtime", type=int, help="minutes before `run` stops the VM (0 = until Ctrl-C)")
+
+
+def _settings_from(ns: argparse.Namespace) -> settings.Settings:
+    cli = {f: getattr(ns, f, None) for f in settings.Settings.__dataclass_fields__}
+    if cli.get("no_password") is None:
+        cli.pop("no_password")
+    if not cli.get("forward"):
+        cli["forward"] = None
+    # `vortax start --name X` with nothing else brings back how X was last launched.
+    name = cli.get("name") or os.environ.get("VORTAX_NAME") or "vortax"
+    saved = {}
+    if not (cli.get("system") or cli.get("source") or os.environ.get("VORTAX_SYSTEM") or os.environ.get("VORTAX_SOURCE")):
+        try:
+            saved = session.load_saved_settings(session.Instance(name))
+        except VortaxError:
+            saved = {}
+    config = {**settings.load_config_file(), **saved} if saved else None
+    return settings.resolve(cli, config=config)
+
+
+def _build(ns: argparse.Namespace):
+    s = _settings_from(ns)
+    resolved = catalog.resolve(s)
+    return s, resolved, session.Instance(s.name)
+
+
+def _instance_arg(ns: argparse.Namespace) -> session.Instance:
+    name = getattr(ns, "name", None) or os.environ.get("VORTAX_NAME") or "vortax"
+    return session.Instance(name)
+
+
+# ---------------------------------------------------------------- commands
+
+
+def cmd_list(ns) -> int:
+    systems = catalog.load_systems()
+    rows = [s for s in systems.values() if not ns.family or s.family == ns.family]
+    if ns.json:
+        print(json.dumps([s.to_dict() for s in rows], indent=2))
+        return 0
+    width = max((len(s.id) for s in rows), default=4)
+    print(f"{'ID'.ljust(width)}  {'FAMILY':8} {'MODES':16} NAME")
+    for s in rows:
+        modes = ",".join(s.modes()) or "bring-your-own"
+        print(f"{s.id.ljust(width)}  {s.family:8} {modes:16} {s.name}")
+    return 0
+
+
+def cmd_profiles(ns) -> int:
+    profiles = catalog.load_profiles()
+    if ns.json:
+        print(json.dumps(profiles, indent=2))
+        return 0
+    for key, p in sorted(profiles.items()):
+        print(f"{key:10} {p.get('name', '')}")
+        if p.get("notes"):
+            print(f"{'':10} {p['notes']}")
+    return 0
+
+
+def _guess_prepared(inst: session.Instance, resolved: catalog.Resolved) -> session.Prepared:
+    mode = resolved.mode
+    if mode == "auto" and fetch.is_local(resolved.source):
+        p = fetch.local_path(resolved.source)
+        if p.is_file():
+            from . import extract
+            mode = {"iso": "iso", "qcow2": "qcow2"}.get(extract.sniff(p), "qcow2")
+    if mode == "iso":
+        return session.Prepared(paths.disks_dir() / f"{inst.name}.qcow2", "qcow2", inst.iso)
+    if mode == "img":
+        return session.Prepared(paths.disks_dir() / f"{inst.name}.img", "raw")
+    return session.Prepared(paths.disks_dir() / f"{inst.name}.qcow2", "qcow2")
+
+
+def cmd_plan(ns) -> int:
+    s, resolved, inst = _build(ns)
+    prepared = _guess_prepared(inst, resolved)
+    existing = inst.existing_disk()
+    if existing and not ns.rebuild:
+        prepared = session.Prepared(existing, "raw" if existing.suffix == ".img" else "qcow2",
+                                    inst.iso if inst.iso.exists() else None)
+    if s.floppy_url:
+        prepared.floppy_path = inst.floppy
+    if s.bios_url and s.firmware == "bios":
+        prepared.bios_path = inst.bios
+    warnings: list[str] = []
+    _state, argv = session.start(s, resolved, inst, prepared, log=warnings.append, dry_run=True)
+    steps = []
+    if not (existing and not ns.rebuild):
+        steps.append(f"download {resolved.source}" if not fetch.is_local(resolved.source)
+                     else f"use local file {resolved.source}")
+        steps.append("detect the file type, extract if archived, place the disk/ISO")
+    else:
+        steps.append(f"reuse existing disk {existing.name}")
+    steps.append("start QEMU" + (f", then open a {s.tunnel} tunnel" if s.tunnel != "none" else ""))
+    out = {
+        "name": inst.name, "system": resolved.system.id if resolved.system else "", "source": resolved.source,
+        "mode": resolved.mode, "profile": resolved.profile_name, "arch": resolved.arch,
+        "steps": steps, "qemu": qemu.command_line(argv), "argv": argv,
+        "warnings": [w.replace("warning: ", "") for w in warnings],
+        "settings": s.redacted(),
+    }
+    if ns.json:
+        print(json.dumps(out, indent=2))
+        return 0
+    print(f"VM:       {inst.name}")
+    if resolved.system:
+        print(f"System:   {resolved.system.name} ({resolved.system.id})")
+    print(f"Source:   {resolved.source}  [{resolved.mode}]")
+    print(f"Profile:  {resolved.profile_name or 'none'}    Arch: {resolved.arch}")
+    print("Steps:")
+    for i, step in enumerate(steps, 1):
+        print(f"  {i}. {step}")
+    print("QEMU command:\n  " + out["qemu"])
+    for w in out["warnings"]:
+        print(f"warning: {w}")
+    return 0
+
+
+def _prepare_for(ns, s, resolved, inst) -> session.Prepared:
+    return session.prepare(s, resolved, inst, force=bool(getattr(ns, "rebuild", False)), log=log)
+
+
+def cmd_prepare(ns) -> int:
+    s, resolved, inst = _build(ns)
+    prep = _prepare_for(ns, s, resolved, inst)
+    print(f"ready: {prep.disk_path} ({prep.disk_format}, {disk.human(disk.size_bytes(prep.disk_path))})")
+    return 0
+
+
+def _print_info(inst: session.Instance, show_password: bool) -> None:
+    st = inst.status()
+    if not st["running"]:
+        print(f"{inst.name}: not running")
+        return
+    vnc = st["vnc"]
+    print(f"{inst.name}: running (pid {st['pid']}, {st['accel']}, {st['ram_mb']} MB, {st['vcpus']} vCPU)")
+    print(f"  VNC (local):   {vnc['bind']}:{vnc['port']}")
+    t = st["tunnel"]
+    if t and t.get("address"):
+        print(f"  VNC ({t['kind']}):  {t['address']}")
+    if vnc.get("password"):
+        if show_password:
+            print(f"  VNC password:  {inst.vnc_password()}")
+        else:
+            print("  VNC password:  hidden (run `vortax password`)")
+    else:
+        print("  VNC password:  none (loopback only)")
+    if st["deadline"]:
+        print(f"  stops at:      {st['deadline']}")
+    for key, label in (("rustdesk", "RustDesk"), ("anydesk", "AnyDesk")):
+        if st.get("access") == key and st.get("access_id"):
+            print(f"  {label} ID:    {st['access_id']}")
+
+
+def cmd_start(ns) -> int:
+    s, resolved, inst = _build(ns)
+    prep = _prepare_for(ns, s, resolved, inst)
+    launch.launch(s, resolved, inst, prep, log=log)
+    if s.runtime:
+        log("note: --runtime is only enforced by `vortax run`; `start` returns immediately")
+    _print_info(inst, ns.show_password)
+    return 0
+
+
+def cmd_run(ns) -> int:
+    s, resolved, inst = _build(ns)
+    prep = _prepare_for(ns, s, resolved, inst)
+    launch.launch(s, resolved, inst, prep, log=log)
+    _print_info(inst, ns.show_password)
+    if ns.detach:
+        return 0
+    deadline = time.monotonic() + s.runtime * 60 if s.runtime else None
+    stop_requested = []
+    signal.signal(signal.SIGTERM, lambda *_: stop_requested.append(1))
+    log("running; press Ctrl-C to stop" + (f" (auto-stop in {s.runtime} min)" if s.runtime else ""))
+    try:
+        while inst.running() and not stop_requested:
+            if deadline and time.monotonic() >= deadline:
+                log("runtime elapsed")
+                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        log("interrupted")
+    if inst.running():
+        inst.stop(graceful=True, timeout=ns.grace, log=log)
+    log("stopped")
+    return 0
+
+
+def cmd_stop(ns) -> int:
+    inst = _instance_arg(ns)
+    if not inst.running():
+        inst.stop(graceful=False)       # also tears down a leftover tunnel
+        print(f"{inst.name} is not running")
+        return 0
+    inst.stop(graceful=not ns.force, timeout=ns.grace, log=log)
+    print(f"{inst.name} stopped")
+    return 0
+
+
+def cmd_kill(ns) -> int:
+    inst = _instance_arg(ns)
+    inst.kill()
+    print(f"{inst.name} killed")
+    return 0
+
+
+def cmd_reboot(ns) -> int:
+    inst = _instance_arg(ns)
+    inst.reboot()
+    print(f"{inst.name} reset")
+    return 0
+
+
+def cmd_status(ns) -> int:
+    names = [ns.name] if ns.name else session.list_instances()
+    rows = [session.Instance(n).status() for n in names]
+    if ns.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no VMs yet; try `vortax list` then `vortax run --system <id>`")
+        return 0
+    for r in rows:
+        state = "running" if r["running"] else "stopped"
+        extra = f"  vnc :{r['vnc'].get('port')}" if r["running"] and r["vnc"] else ""
+        print(f"{r['name']:16} {state:8} {r['system'] or '-':14} {disk.human(r['disk_size']):>10}{extra}")
+    return 0
+
+
+def cmd_info(ns) -> int:
+    _print_info(_instance_arg(ns), ns.show_password)
+    return 0
+
+
+def cmd_password(ns) -> int:
+    inst = _instance_arg(ns)
+    if ns.access:
+        try:
+            print(inst.access_pass_file.read_text(encoding="utf-8").strip())
+        except OSError:
+            raise VortaxError("no RustDesk/AnyDesk password has been generated for this VM yet") from None
+        return 0
+    if ns.set or ns.new:
+        if ns.new:
+            pw = session.new_password()
+        elif sys.stdin.isatty():
+            pw = getpass.getpass("new VNC password: ")
+            if pw != getpass.getpass("again: "):
+                raise VortaxError("passwords do not match")
+        else:
+            pw = sys.stdin.readline().rstrip("\n")
+        inst.set_vnc_password(pw, log=log)
+        log("password updated" + (" and applied to the running VM" if inst.running() else " (applies on next start)"))
+        if ns.new:
+            print(inst.vnc_password())
+        return 0
+    pw = inst.vnc_password()
+    if not pw:
+        raise VortaxError("no VNC password is set for this VM")
+    print(pw)
+    return 0
+
+
+def cmd_snapshot(ns) -> int:
+    inst = _instance_arg(ns)
+    out = inst.snapshot(ns.action, ns.tag or "")
+    if out:
+        print(out)
+    return 0
+
+
+def cmd_export(ns) -> int:
+    inst = _instance_arg(ns)
+    out = session.export(inst, Path(ns.out) if ns.out else None, ns.rclone or "", log=log)
+    print(out)
+    return 0
+
+
+def cmd_tunnel(ns) -> int:
+    inst = _instance_arg(ns)
+    if ns.action == "stop":
+        from . import tunnels
+        tunnels.stop(inst.state().get("tunnel"))
+        inst.update_state(tunnel={})
+        print("tunnel stopped")
+        return 0
+    t = session.start_tunnel(inst, ns.kind)
+    print(f"{t['kind']}: {t['address']}")
+    return 0
+
+
+def cmd_rm(ns) -> int:
+    inst = _instance_arg(ns)
+    if inst.running():
+        raise VortaxError(f"{inst.name} is running; stop it first")
+    targets = [p for p in (*inst.disk_candidates(), inst.iso, inst.floppy, inst.bios) if p.exists() or p.is_symlink()]
+    targets.append(inst.run)
+    if not ns.yes:
+        print("would delete:")
+        for t in targets:
+            print(f"  {t}")
+        print("re-run with --yes to delete")
+        return 1
+    for t in targets:
+        if t.is_dir() and not t.is_symlink():
+            shutil.rmtree(t, ignore_errors=True)
+        else:
+            t.unlink(missing_ok=True)
+    print(f"removed {inst.name}")
+    return 0
+
+
+def cmd_access(ns) -> int:
+    if ns.action == "list":
+        for p in access.PROGRAMS.values():
+            print(f"{p.key:10} {p.label}  ports: {', '.join(p.ports)}")
+        return 0
+    if ns.action == "launcher":
+        inst = _instance_arg(ns)
+        port = inst.state().get("vnc", {}).get("port", 5900)
+        print(access.write_launcher(int(port)))
+        return 0
+    if not ns.program:
+        raise VortaxError("name a program: vortax access install <rdp|nomachine|rustdesk|anydesk>")
+    access.run_install(ns.program, dry_run=ns.dry_run, allow_unverified=ns.allow_unverified, log=print)
+    return 0
+
+
+def cmd_doctor(ns) -> int:
+    checks = doctor.run_checks()
+    if ns.json:
+        print(json.dumps([c.to_dict() for c in checks], indent=2))
+    else:
+        print(doctor.format_report(checks))
+    return doctor.exit_code(checks)
+
+
+def cmd_selftest(ns) -> int:
+    problems = selftest.check_plans()
+    if problems:
+        for p in problems:
+            print(f"FAIL {p}")
+        return 1
+    print("ok: catalog, profiles and command builder are consistent")
+    if ns.boot:
+        selftest.boot_test(timeout=ns.timeout, log=lambda m: print(f"ok: {m}"))
+        print("ok: end-to-end boot test passed")
+    return 0
+
+
+def cmd_check_links(ns) -> int:
+    bad = 0
+    for s in catalog.load_systems().values():
+        for mode, url in s.sources.items():
+            if not url:
+                continue
+            code, final = fetch.head_status(url)
+            good = 200 <= code < 400
+            bad += 0 if good else 1
+            print(f"{'ok  ' if good else 'FAIL'} {code:3} {s.id}/{mode}  {url}")
+    return 1 if bad else 0
+
+
+def cmd_config(ns) -> int:
+    if ns.action == "path":
+        print(f"data:   {paths.data_dir()}\nconfig: {paths.config_dir()}")
+        return 0
+    s = settings.resolve()
+    print(json.dumps(s.redacted(), indent=2))
+    return 0
+
+
+def cmd_secret(ns) -> int:
+    if sys.stdin.isatty():
+        value = getpass.getpass(f"{ns.name}: ")
+    else:
+        value = sys.stdin.readline().rstrip("\n")
+    if not value:
+        raise VortaxError("empty value; nothing saved")
+    settings.set_secret(ns.name, value)
+    print(f"saved {ns.name} to {settings.secrets_path()} (mode 600)")
+    return 0
+
+
+def cmd_dashboard(ns) -> int:
+    from .dashboard import server
+    return server.serve(ns.host, ns.port, open_browser=ns.open)
+
+
+# ---------------------------------------------------------------- parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="vortax", description=DESCRIPTION,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version=f"vortax {__version__}")
+    sub = p.add_subparsers(dest="command", metavar="<command>")
+
+    def add(name, fn, help_, **kw):
+        sp = sub.add_parser(name, help=help_, description=help_, **kw)
+        sp.set_defaults(fn=fn)
+        return sp
+
+    sp = add("list", cmd_list, "show the system catalog")
+    sp.add_argument("--family", choices=["linux", "windows", "android", "game", "retro"])
+    sp.add_argument("--json", action="store_true")
+
+    sp = add("profiles", cmd_profiles, "show hardware presets")
+    sp.add_argument("--json", action="store_true")
+
+    sp = add("plan", cmd_plan, "show what a run would do and the exact QEMU command (no changes made)")
+    _add_run_options(sp)
+    sp.add_argument("--rebuild", action="store_true")
+    sp.add_argument("--json", action="store_true")
+
+    sp = add("prepare", cmd_prepare, "download and set up the disk without starting the VM")
+    _add_run_options(sp)
+    sp.add_argument("--rebuild", action="store_true", help="discard an existing disk and start over")
+
+    for name, fn, help_ in (("start", cmd_start, "prepare if needed, start the VM in the background"),
+                            ("run", cmd_run, "prepare, start, and stay in the foreground until Ctrl-C or --runtime")):
+        sp = add(name, fn, help_)
+        _add_run_options(sp)
+        sp.add_argument("--rebuild", action="store_true", help="discard an existing disk and start over")
+        sp.add_argument("--show-password", action="store_true", help="print the VNC password after starting")
+        if name == "run":
+            sp.add_argument("--detach", action="store_true", help="return right after starting (same as `start`)")
+            sp.add_argument("--grace", type=float, default=30.0, help="seconds to wait for a clean guest shutdown")
+
+    def named(sp):
+        sp.add_argument("--name", help="VM name (default: vortax, or $VORTAX_NAME)")
+        return sp
+
+    sp = named(add("stop", cmd_stop, "shut the guest down (ACPI power button), then QEMU"))
+    sp.add_argument("--force", action="store_true", help="do not wait for the guest")
+    sp.add_argument("--grace", type=float, default=30.0)
+    named(add("kill", cmd_kill, "terminate QEMU immediately"))
+    named(add("reboot", cmd_reboot, "reset the running guest"))
+    sp = add("status", cmd_status, "list VMs and whether they run")
+    sp.add_argument("--name")
+    sp.add_argument("--json", action="store_true")
+    sp = named(add("info", cmd_info, "connection details for a running VM"))
+    sp.add_argument("--show-password", action="store_true")
+
+    sp = named(add("password", cmd_password, "show or change the VNC password"))
+    sp.add_argument("--set", action="store_true", help="prompt for a new password (or read one line from stdin)")
+    sp.add_argument("--new", action="store_true", help="generate a new random password")
+    sp.add_argument("--access", action="store_true", help="show the RustDesk/AnyDesk password instead")
+
+    sp = named(add("snapshot", cmd_snapshot, "save, load, list or delete qcow2 snapshots"))
+    sp.add_argument("action", choices=["save", "load", "list", "delete"])
+    sp.add_argument("tag", nargs="?")
+
+    sp = named(add("export", cmd_export, "compress a stopped VM's disk (optionally upload with rclone)"))
+    sp.add_argument("--out", help="output file (extension is chosen by the compressor)")
+    sp.add_argument("--rclone", metavar="REMOTE:PATH", help="upload the result with rclone")
+
+    sp = named(add("tunnel", cmd_tunnel, "start or stop a tunnel for a running VM"))
+    sp.add_argument("action", choices=["start", "stop"])
+    sp.add_argument("kind", nargs="?", choices=[t for t in settings.TUNNELS if t != "none"], default="bore")
+
+    sp = named(add("rm", cmd_rm, "delete a VM's disk, media and state"))
+    sp.add_argument("--yes", action="store_true")
+
+    sp = named(add("access", cmd_access, "install host remote-access programs (rdp, nomachine, rustdesk, anydesk)"))
+    sp.add_argument("action", choices=["install", "list", "launcher"])
+    sp.add_argument("program", nargs="?")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.add_argument("--allow-unverified", action="store_true", help="install a package that has no pinned checksum")
+
+    sp = add("doctor", cmd_doctor, "check the installation")
+    sp.add_argument("--json", action="store_true")
+
+    sp = add("selftest", cmd_selftest, "verify the install; --boot also boots a tiny test guest")
+    sp.add_argument("--boot", action="store_true")
+    sp.add_argument("--timeout", type=float, default=60.0)
+
+    add("check-links", cmd_check_links, "HEAD-check every catalog download URL")
+
+    sp = add("config", cmd_config, "show resolved settings or the data/config paths")
+    sp.add_argument("action", choices=["show", "path"], nargs="?", default="show")
+
+    sp = add("secret", cmd_secret, "store a tunnel token in ~/.config/vortax/secrets.json (mode 600)")
+    sp.add_argument("name", choices=["tailscale_authkey", "ngrok_authtoken"])
+
+    sp = add("dashboard", cmd_dashboard, "serve the web dashboard")
+    sp.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1)")
+    sp.add_argument("--port", type=int, default=8765)
+    sp.add_argument("--open", action="store_true", help="open a browser when it starts")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)      # `vortax list | head` should not traceback
+    parser = build_parser()
+    ns = parser.parse_args(argv)
+    if not getattr(ns, "fn", None):
+        parser.print_help()
+        return 0
+    try:
+        return int(ns.fn(ns) or 0)
+    except VortaxError as exc:
+        print(f"vortax: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130

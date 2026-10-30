@@ -1,0 +1,341 @@
+"use strict";
+/* Vortax dashboard. No framework, no CDN, no innerHTML with data: every value goes through textContent. */
+
+const $ = (sel) => document.querySelector(sel);
+const ICONS = {
+  home: "M3 11l9-8 9 8M5 10v10h14V10",
+  launch: "M5 3l14 9-14 9z",
+  access: "M4 6h16v10H4zM8 20h8M12 16v4",
+  disk: "M4 7c0-2 16-2 16 0v10c0 2-16 2-16 0zM4 12c0 2 16 2 16 0",
+  logs: "M5 4h14v16H5zM9 9h6M9 13h6M9 17h3",
+  health: "M3 12h4l3-8 4 16 3-8h4",
+};
+const TABS = [["overview", "Overview", "home"], ["launch", "Systems", "launch"], ["access", "Access", "access"],
+              ["storage", "Storage", "disk"], ["logs", "Logs", "logs"], ["health", "Health", "health"]];
+
+let token = "", view = "overview", data = null, catalog = null, timer = null, logName = "", logSource = "qemu";
+let family = "all", search = "";
+
+/* ---------- tiny DOM helper ---------- */
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k === "text") el.textContent = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+}
+function icon(name) {
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  const p = document.createElementNS(ns, "path"); p.setAttribute("d", ICONS[name]); svg.append(p);
+  return svg;
+}
+const fmtBytes = (n) => { n = Number(n) || 0; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
+
+/* ---------- api ---------- */
+async function api(path, body) {
+  const opts = { headers: { "X-Vortax-Token": token } };
+  if (body !== undefined) { opts.method = "POST"; opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  let res;
+  try { res = await fetch("/api/" + path, opts); } catch (e) { setBanner("Cannot reach the dashboard server.", true); throw e; }
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { setBanner("Wrong or missing token. Open the full URL that `vortax dashboard` printed (it ends with #token=...).", true); throw new Error("auth"); }
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  setBanner("");
+  return json;
+}
+function setBanner(msg, err) { const b = $("#banner"); b.hidden = !msg; b.textContent = msg || ""; b.className = "banner" + (err ? " err" : ""); }
+let toastTimer;
+function toast(msg, err) { const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3500); }
+async function act(fn, okMsg) { try { const r = await fn(); if (okMsg) toast(okMsg); return r; } catch (e) { if (e.message !== "auth") toast(e.message, true); } }
+
+/* ---------- modal ---------- */
+function openModal(...kids) { const s = $("#sheet"); s.replaceChildren(...kids); $("#modal").hidden = false; }
+function closeModal() { $("#modal").hidden = true; $("#sheet").replaceChildren(); }
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+/* ---------- shared pieces ---------- */
+function bar(pct, cls) { const i = h("i"); i.style.width = Math.max(0, Math.min(100, pct)) + "%"; return h("div", { class: "bar " + (cls || "") }, i); }
+function stat(label, big, pct, left, right, cls) {
+  return h("div", { class: "card stat" }, h("h2", { text: label }), h("div", { class: "big", text: big }), bar(pct, cls),
+    h("div", { class: "meta" }, h("span", { text: left }), h("span", { text: right })));
+}
+function kv(label, value, cls) { return h("div", {}, h("span", { text: label }), h("b", { class: cls || "", text: value || "-" })); }
+
+/* ---------- views ---------- */
+function renderOverview() {
+  const s = data.stats, d = s.disk, root = h("div");
+  const diskPct = d.total ? (100 * d.used / d.total) : 0;
+  root.append(h("div", { class: "grid" },
+    stat("CPU", s.cpu_pct + "%", s.cpu_pct, s.cpus + " cores", s.load.length ? "load " + s.load[0].toFixed(2) : "", "green"),
+    stat("Memory", fmtBytes(s.ram_used), s.ram_pct, "of " + fmtBytes(s.ram_total), s.ram_pct + "%"),
+    stat("Disk", fmtBytes(d.free) + " free", diskPct, "of " + fmtBytes(d.total), Math.round(diskPct) + "%", diskPct > 90 ? "amber" : "")));
+  root.append(...data.jobs.filter((j) => j.status === "running" || j.status === "failed").map(jobCard));
+  if (!data.instances.length) {
+    root.append(h("div", { class: "card empty" }, h("p", { text: "No virtual machines yet." }),
+      h("button", { class: "btn primary", text: "Pick a system", onclick: () => go("launch") })));
+  }
+  for (const vm of data.instances) root.append(vmCard(vm));
+  return root;
+}
+
+function vmCard(vm) {
+  const run = vm.running;
+  const card = h("div", { class: "card vm" });
+  card.append(h("div", { class: "vm-head" }, h("h3", { text: vm.name }),
+    h("span", { class: "pill " + (run ? "on" : "off"), text: run ? "running" : "stopped" }),
+    h("span", { class: "sub", text: [vm.system, vm.profile && "profile " + vm.profile, vm.arch].filter(Boolean).join(" · ") })));
+  const cells = [kv("Disk", vm.disk ? fmtBytes(vm.disk_size) + " " + (vm.disk_format || "") : "none")];
+  if (run) {
+    cells.push(kv("Acceleration", vm.accel), kv("Memory", `${vm.ram_mb} MB (using ${fmtBytes(vm.rss)})`),
+      kv("CPU", `${vm.vcpus} vCPU · ${vm.cpu_pct}%`), kv("VNC port", String(vm.vnc.port || "")));
+    if (vm.deadline) cells.push(kv("Stops at", new Date(vm.deadline).toLocaleTimeString()));
+  }
+  card.append(h("div", { class: "kv" }, cells));
+  const row = h("div", { class: "row" });
+  if (run) {
+    row.append(h("button", { class: "btn warn", text: "Stop", onclick: () => confirmThen(`Shut down ${vm.name}? The guest gets a power-button press.`, () => vmAct(vm.name, "stop")) }),
+      h("button", { class: "btn good", text: "Reboot", onclick: () => confirmThen(`Reset ${vm.name}? Unsaved work in the guest is lost.`, () => vmAct(vm.name, "reboot")) }),
+      h("button", { class: "btn bad", text: "Kill", onclick: () => confirmThen(`Kill ${vm.name} immediately? This is like pulling the plug.`, () => vmAct(vm.name, "kill")) }),
+      h("button", { class: "btn", text: "Connect", onclick: () => { view = "access"; render(); } }));
+  } else if (vm.disk) {
+    row.append(h("button", { class: "btn primary", text: "Start", onclick: () => vmAct(vm.name, "start") }),
+      h("button", { class: "btn", text: "Boot from disk", onclick: () => bootFromDisk(vm.name) }));
+  }
+  card.append(row);
+  return card;
+}
+
+function bootFromDisk(name) {
+  confirmThen("Start without the installer ISO? Use this once the OS is installed.", async () => {
+    const j = await act(() => api("run", { name, boot: "disk" }));
+    if (j) trackJob(j.job);
+  });
+}
+
+async function vmAct(name, action) {
+  const r = await act(() => api("vm", { name, action }));
+  if (r && r.job) trackJob(r.job); else if (r) { toast(action + " sent"); refresh(); }
+}
+
+function jobCard(j) {
+  const c = h("div", { class: "card" }, h("h2", { text: `${j.kind} · ${j.name} · ${j.status}` }));
+  if (j.status === "running" && j.phase === "download") c.append(h("div", { class: "note", text: "Downloaded " + fmtBytes(j.downloaded || 0) }));
+  if (j.error) c.append(h("div", { class: "fail", text: j.error }));
+  c.append(h("pre", { class: "log", text: j.log.join("\n") || "waiting..." }));
+  return c;
+}
+
+/* --- confirm --- */
+function confirmThen(msg, fn) {
+  openModal(h("h3", { text: "Are you sure?" }), h("p", { class: "sub", text: msg }),
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Yes", onclick: () => { closeModal(); fn(); } }),
+      h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+}
+
+/* --- jobs --- */
+async function trackJob(id) {
+  openModal(h("h3", { text: "Working..." }), h("pre", { class: "log", id: "joblog", text: "starting" }), h("div", { class: "row", id: "jobbtns" }));
+  for (;;) {
+    let j;
+    try { j = await api("job?id=" + encodeURIComponent(id)); } catch (e) { return; }
+    const sheet = $("#sheet"); if (!sheet || !$("#joblog")) return;      // user closed the modal
+    sheet.querySelector("h3").textContent = j.status === "running" ? `Working... (${j.phase}, ${j.elapsed}s${j.downloaded ? ", " + fmtBytes(j.downloaded) : ""})`
+      : j.status === "done" ? "Done" : "Failed";
+    $("#joblog").textContent = (j.error ? "ERROR: " + j.error + "\n\n" : "") + j.log.join("\n");
+    if (j.status !== "running") {
+      $("#jobbtns").replaceChildren(h("button", { class: "btn primary", text: "Close", onclick: () => { closeModal(); refresh(); } }));
+      refresh(); return;
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+}
+
+/* --- systems / launch --- */
+async function renderLaunch() {
+  if (!catalog) catalog = await api("systems");
+  const root = h("div");
+  const fams = ["all", ...new Set(catalog.systems.map((s) => s.family))];
+  root.append(h("div", { class: "filters" }, fams.map((f) => h("button", { class: "chip", "aria-pressed": String(f === family), text: f, onclick: () => { family = f; render(); } })),
+    h("input", { type: "search", placeholder: "search", value: search, "aria-label": "Search systems", style: false, oninput: (e) => { search = e.target.value; filterCat(); } })));
+  const grid = h("div", { class: "cat", id: "cat" });
+  root.append(grid, h("div", { class: "card", style: false }, h("h2", { text: "Your own image" }),
+    h("p", { class: "sub", text: "Any ISO, disk image or archive, from a URL or a path on this machine." }),
+    h("button", { class: "btn primary", text: "Run a custom source", onclick: () => launchForm(null) })));
+  fillCat(grid);
+  return root;
+}
+function fillCat(grid) {
+  grid.replaceChildren();
+  const q = search.trim().toLowerCase();
+  for (const s of catalog.systems) {
+    if (family !== "all" && s.family !== family) continue;
+    if (q && !(s.id + " " + s.name).toLowerCase().includes(q)) continue;
+    const byo = !s.modes.length;
+    grid.append(h("button", { class: "sys", onclick: () => launchForm(s) }, h("b", { text: s.name }),
+      s.modes.map((m) => h("span", { class: "tag", text: m })), byo ? h("span", { class: "tag byo", text: "bring your own" }) : null,
+      h("small", { text: s.disk_gb ? ` ${s.disk_gb} GB disk` : "" })));
+  }
+  if (!grid.children.length) grid.append(h("div", { class: "empty", text: "Nothing matches." }));
+}
+function filterCat() { fillCat($("#cat")); }
+
+function field(label, input, wide) { return h("div", { class: wide ? "wide" : "" }, h("label", { text: label }), input); }
+function select(id, opts, value) { const s = h("select", { id }); for (const o of opts) s.append(h("option", { value: o, text: o || "(default)", selected: o === value })); return s; }
+
+function launchForm(sys) {
+  const modes = sys ? sys.modes : [];
+  const f = h("div", { class: "form" },
+    field("VM name", h("input", { id: "f_name", value: sys ? sys.id.replace(/[^A-Za-z0-9._-]/g, "-") : "vm1" })),
+    sys && modes.length ? field("Boot mode", select("f_mode", modes, modes[0])) : null,
+    !sys || !modes.length ? field("Source URL or path", h("input", { id: "f_source", placeholder: "https://... or /path/file.iso" }), true) : null,
+    sys && sys.profile ? null : field("Hardware profile", select("f_profile", ["", ...Object.keys(catalog.profiles)], "")),
+    field("Firmware", select("f_fw", ["bios", "uefi"], "bios")),
+    field("RAM (MB, 0 = auto)", h("input", { id: "f_ram", type: "number", min: "0", value: "0" })),
+    field("vCPUs", h("input", { id: "f_cpu", type: "number", min: "1", value: "2" })),
+    field("Tunnel", select("f_tunnel", catalog.options.tunnels, "none")),
+    field("Runtime (min, 0 = none)", h("input", { id: "f_rt", type: "number", min: "0", value: "0" })));
+  openModal(h("h3", { text: sys ? sys.name : "Custom source" }),
+    h("p", { class: "sub", text: sys && sys.notes ? sys.notes : "Downloads, prepares and starts the VM." }), f,
+    h("p", { class: "note", text: "VNC listens on this machine only and gets a random password. Use the Access tab to see it." }),
+    h("div", { class: "row", style: false }, h("button", { class: "btn primary", text: "Start", onclick: () => submitLaunch(sys) }),
+      h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+}
+async function submitLaunch(sys) {
+  const v = (id) => { const e = $("#" + id); return e ? e.value : ""; };
+  const body = { name: v("f_name"), firmware: v("f_fw"), ram_mb: Number(v("f_ram")), vcpus: Number(v("f_cpu")), tunnel: v("f_tunnel"), runtime: Number(v("f_rt")) };
+  if (sys) { body.system = sys.id; if (v("f_mode")) body.boot_mode = v("f_mode"); } else body.source = v("f_source");
+  if (v("f_profile")) body.profile = v("f_profile");
+  const r = await act(() => api("run", body));
+  if (r) trackJob(r.job);
+}
+
+/* --- access --- */
+function renderAccess() {
+  const running = data.instances.filter((v) => v.running), root = h("div");
+  if (!running.length) return h("div", { class: "card empty", text: "Start a VM to see how to connect to it." });
+  for (const vm of running) {
+    const card = h("div", { class: "card vm" }, h("div", { class: "vm-head" }, h("h3", { text: vm.name }), h("span", { class: "pill on", text: "running" })));
+    const cells = [h("div", {}, h("span", { text: "VNC on this machine" }), h("b", { class: "addr", text: `${vm.vnc.bind}:${vm.vnc.port}` }))];
+    if (vm.tunnel && vm.tunnel.address) cells.push(h("div", {}, h("span", { text: `${vm.tunnel.kind} tunnel` }), h("b", { class: "addr", text: vm.tunnel.address })));
+    card.append(h("div", { class: "kv" }, cells));
+    const pw = h("code", { class: "addr", text: vm.vnc.password ? "hidden" : "no password (loopback only)" });
+    const row = h("div", { class: "row" }, h("span", { class: "sub", text: "VNC password:" }), pw);
+    if (vm.vnc.password) {
+      row.append(h("button", { class: "btn sm", text: "Show", onclick: async (e) => { const r = await act(() => api("password?name=" + encodeURIComponent(vm.name))); if (r) { pw.textContent = r.password; e.target.disabled = true; } } }),
+        h("button", { class: "btn sm", text: "New random", onclick: () => confirmThen("Generate a new password? Connected viewers keep working until they disconnect.", async () => { const r = await act(() => api("password/set", { name: vm.name, generate: true }), "Password changed"); if (r) pw.textContent = r.password; }) }),
+        h("button", { class: "btn sm", text: "Set...", onclick: () => passwordForm(vm.name, pw) }));
+    }
+    card.append(row);
+    const t = h("div", { class: "row" }, h("span", { class: "sub", text: "Tunnel:" }));
+    for (const kind of catalog ? catalog.options.tunnels.filter((k) => k !== "none") : ["bore", "ngrok", "tailscale"])
+      t.append(h("button", { class: "btn sm", text: kind, onclick: async () => { const r = await act(() => api("tunnel", { name: vm.name, kind })); if (r && r.job) trackJob(r.job); } }));
+    if (vm.tunnel && vm.tunnel.address) t.append(h("button", { class: "btn sm bad", text: "close tunnel", onclick: async () => { await act(() => api("tunnel", { name: vm.name, kind: "stop" }), "Tunnel closed"); refresh(); } }));
+    card.append(t);
+    card.append(h("div", { class: "row" }, h("button", { class: "btn", text: "Open in browser (noVNC)", onclick: async () => {
+      const r = await act(() => api("webvnc", { name: vm.name, action: "start" }));
+      if (r && r.port) { const url = `${location.protocol}//${location.hostname}:${r.port}` + r.path.replace("{host}", location.hostname); window.open(url, "_blank", "noopener"); }
+    } }), h("button", { class: "btn", text: "Snapshots", onclick: () => snapshots(vm.name) })));
+    card.append(h("p", { class: "note", text: "Point any VNC viewer at the address above. The password is checked by QEMU; only its first 8 characters count." }));
+    root.append(card);
+  }
+  return root;
+}
+function passwordForm(name, out) {
+  const input = h("input", { type: "password", maxlength: "8", id: "f_pw", autocomplete: "new-password" });
+  openModal(h("h3", { text: "Set VNC password" }), h("p", { class: "sub", text: "Up to 8 characters (a VNC protocol limit)." }), field("New password", input),
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save", onclick: async () => { const r = await act(() => api("password/set", { name, password: input.value }), "Password changed"); if (r) { out.textContent = "hidden"; closeModal(); } } }), h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+}
+async function snapshots(name) {
+  const out = h("pre", { class: "log", text: "loading..." }), tag = h("input", { placeholder: "snapshot name", id: "f_tag" });
+  const reload = async () => { const r = await act(() => api("snapshot", { name, action: "list" })); out.textContent = r ? (r.text || "no snapshots") : "unavailable"; };
+  const call = (action) => async () => { const r = await act(() => api("snapshot", { name, action, tag: tag.value }), "Done"); if (r) reload(); };
+  openModal(h("h3", { text: "Snapshots · " + name }), out, h("div", { class: "form", style: false }, field("Name", tag)),
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save", onclick: call("save") }), h("button", { class: "btn", text: "Load", onclick: call("load") }),
+      h("button", { class: "btn bad", text: "Delete", onclick: call("delete") }), h("button", { class: "btn", text: "Close", onclick: closeModal })));
+  reload();
+}
+
+/* --- storage --- */
+async function renderStorage() {
+  const s = await api("storage"), root = h("div", { class: "card" });
+  root.append(h("h2", { text: s.data_dir }));
+  if (!s.items.length) { root.append(h("div", { class: "empty", text: "Nothing stored yet." })); return root; }
+  const tb = h("tbody");
+  for (const it of s.items) {
+    tb.append(h("tr", {}, h("td", { text: it.kind }), h("td", { class: "mono", text: it.name }), h("td", { class: "num", text: fmtBytes(it.size) }),
+      h("td", {}, h("button", { class: "btn sm bad", text: "Delete", onclick: () => confirmThen(`Delete ${it.name}? This cannot be undone.`, async () => { await act(() => api("storage/delete", { kind: it.kind, name: it.name }), "Deleted"); render(); }) }))));
+  }
+  root.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Type" }), h("th", { text: "File" }), h("th", { text: "Size" }), h("th"))), tb),
+    h("p", { class: "note", text: `${fmtBytes(s.stats.free)} free of ${fmtBytes(s.stats.total)}` }));
+  return root;
+}
+
+/* --- logs --- */
+async function renderLogs() {
+  const names = data.instances.map((v) => v.name);
+  if (!names.length) return h("div", { class: "card empty", text: "No logs yet." });
+  if (!names.includes(logName)) logName = names[0];
+  const pre = h("pre", { class: "log", text: "loading..." });
+  const load = async () => { const r = await act(() => api(`logs?name=${encodeURIComponent(logName)}&source=${logSource}&lines=200`)); pre.textContent = r ? (r.text || "(empty)") : ""; pre.scrollTop = pre.scrollHeight; };
+  const sel = select("f_log", names, logName); sel.addEventListener("change", () => { logName = sel.value; load(); });
+  const src = select("f_src", ["qemu", "tunnel"], logSource); src.addEventListener("change", () => { logSource = src.value; load(); });
+  const root = h("div", { class: "card" }, h("div", { class: "form" }, field("VM", sel), field("Log", src)), pre,
+    h("div", { class: "row" }, h("button", { class: "btn sm", text: "Refresh", onclick: load })));
+  load(); return root;
+}
+
+/* --- health --- */
+async function renderHealth() {
+  const r = await api("doctor"), tb = h("tbody");
+  for (const c of r.checks) tb.append(h("tr", {}, h("td", { class: c.ok ? "ok" : c.required ? "fail" : "warnc", text: c.ok ? "ok" : c.required ? "missing" : "optional" }),
+    h("td", { text: c.name }), h("td", { class: "mono", text: c.detail + (!c.ok && c.hint ? "  → " + c.hint : "") })));
+  return h("div", { class: "card" }, h("table", {}, tb));
+}
+
+/* ---------- shell ---------- */
+function go(v) { view = v; render(); }
+function buildNav() {
+  const nav = $("#tabs"); nav.replaceChildren();
+  for (const [id, label, ic] of TABS) nav.append(h("button", { class: "tab", "aria-current": id === view ? "page" : false, onclick: () => go(id) }, icon(ic), h("span", { text: label })));
+}
+async function render() {
+  buildNav(); $("#title").textContent = TABS.find((t) => t[0] === view)[1];
+  const target = $("#view");
+  try {
+    if (!data) data = await api("overview");
+    if (!catalog && (view === "launch" || view === "access")) catalog = await api("systems");
+    const node = await ({ overview: renderOverview, launch: renderLaunch, access: renderAccess, storage: renderStorage, logs: renderLogs, health: renderHealth })[view]();
+    target.replaceChildren(node);
+  } catch (e) { if (e.message !== "auth") target.replaceChildren(h("div", { class: "card fail", text: e.message })); }
+  $("#subtitle").textContent = data ? `${data.instances.filter((v) => v.running).length} running · ${data.instances.length} total` : "";
+}
+let lastSig = "";
+async function refresh() {
+  try { data = await api("overview"); } catch (e) { return; }
+  $("#clock").textContent = data.stats.time;
+  $("#subtitle").textContent = `${data.instances.filter((v) => v.running).length} running · ${data.instances.length} total`;
+  if (!$("#modal").hidden) return;                       // never rebuild the page under an open dialog
+  if (view === "overview") render();
+  else if (view === "access") {                          // keep revealed passwords on screen unless something changed
+    const sig = JSON.stringify(data.instances.map((v) => [v.name, v.running, v.vnc && v.vnc.port, v.tunnel && v.tunnel.address]));
+    if (sig !== lastSig) { lastSig = sig; render(); }
+  }
+}
+
+function boot() {
+  const m = location.hash.match(/token=([A-Za-z0-9_-]+)/);
+  try { if (m) sessionStorage.setItem("vortax-token", m[1]); token = sessionStorage.getItem("vortax-token") || ""; } catch (e) { token = m ? m[1] : ""; }
+  if (m) history.replaceState(null, "", location.pathname);
+  if (!token) { setBanner("No token. Open the URL that `vortax dashboard` printed (it ends with #token=...).", true); return; }
+  $("#ver").textContent = "v3";
+  render().then(() => { $("#ver").textContent = data ? "v" + data.version : ""; });
+  timer = setInterval(() => { if (!document.hidden) refresh(); }, 2500);
+}
+boot();

@@ -1,0 +1,170 @@
+name: CI
+
+# Build and test the package only. Nothing here runs a long-lived VM or a remote desktop.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      system:
+        description: "Optional smoke test: catalog id to download and briefly boot (leave empty to skip)"
+        required: false
+        default: ""
+      boot_mode:
+        description: "iso, qcow2 or img (auto = best available)"
+        required: false
+        default: "auto"
+      source:
+        description: "Optional URL to use instead of the catalog"
+        required: false
+        default: ""
+      hold_seconds:
+        description: "How long to keep the guest running before stopping it (max 600)"
+        required: false
+        default: "60"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests (fake qemu on PATH)
+        run: PYTHONPATH=src python -W error::DeprecationWarning -m unittest discover -s tests -t . -v
+      - name: Catalog and command-builder consistency
+        run: PYTHONPATH=src python -m vortax selftest
+      - name: Bytecode compiles
+        run: python -m compileall -q src
+      - name: Dashboard script parses
+        run: node --check src/vortax/dashboard/static/app.js
+      - name: Shell scripts
+        run: shellcheck --severity=warning packaging/build-deb.sh debian/postinst debian/prerm
+
+  deb:
+    name: .deb on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the package
+        env:
+          MAINTAINER: "Vortax CI <ci@users.noreply.github.com>"
+          HOMEPAGE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          packaging/build-deb.sh
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+
+      - name: Install on a clean runner (apt resolves the QEMU dependencies)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ./dist/*.deb
+
+      - name: Installed layout
+        run: |
+          vortax --version
+          test -f /usr/share/man/man1/vortax.1.gz
+          python3 -c "import vortax, sys; print(vortax.__file__)"
+          vortax doctor
+
+      - name: Dry-run every catalog entry that has a source
+        run: |
+          set -e
+          vortax list --json > systems.json
+          python3 - <<'PY' > ids.txt
+          import json
+          for s in json.load(open("systems.json")):
+              for mode in s["modes"]:
+                  print(s["id"], mode)
+          PY
+          test -s ids.txt
+          while read -r id mode; do
+            vortax plan --system "$id" --boot-mode "$mode" --json > /dev/null
+          done < ids.txt
+          echo "planned $(wc -l < ids.txt) catalog entries"
+
+      - name: Boot a tiny guest through the whole pipeline (real QEMU)
+        run: |
+          vortax selftest --boot --timeout 90
+          # also with software emulation forced, which is what a phone or most VPSes get
+          VORTAX_ACCEL=tcg vortax selftest --boot --timeout 120
+
+      - name: Dashboard answers over HTTP with auth
+        run: |
+          vortax dashboard --port 8765 > dash.log 2>&1 &
+          dash_pid=$!
+          for _ in $(seq 1 20); do curl -fs http://127.0.0.1:8765/ >/dev/null && break; sleep 0.5; done
+          token="$(sed -n 's/.*#token=//p' dash.log | head -n1)"
+          test -n "$token"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/overview)" = 401
+          curl -fs -H "X-Vortax-Token: ${token}" http://127.0.0.1:8765/api/overview | python3 -m json.tool > /dev/null
+          kill "$dash_pid"
+
+      - name: Uninstall leaves nothing behind
+        run: |
+          sudo apt-get remove -y vortax
+          ! command -v vortax
+          ! python3 -c "import vortax" 2>/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vortax-deb-${{ matrix.os }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  smoke-image:
+    name: smoke test a real image (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.system != '' || inputs.source != '') }}
+    needs: deb
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vortax-deb-ubuntu-24.04
+      - name: Install
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ./*.deb
+      - name: Download, prepare, boot, hold, stop
+        env:
+          # Inputs reach the shell only as environment variables, never pasted into the script.
+          VORTAX_SYSTEM: ${{ inputs.system }}
+          VORTAX_BOOT_MODE: ${{ inputs.boot_mode }}
+          VORTAX_SOURCE: ${{ inputs.source }}
+          HOLD: ${{ inputs.hold_seconds }}
+          VORTAX_NAME: smoke
+          VORTAX_RAM_MB: "3072"
+        run: |
+          set -eu
+          case "$HOLD" in ''|*[!0-9]*) echo "hold_seconds must be a number"; exit 1;; esac
+          [ "$HOLD" -le 600 ] || HOLD=600
+          vortax plan
+          vortax start
+          sleep "$HOLD"
+          vortax status
+          vortax status --json | python3 -c 'import json,sys; vm=json.load(sys.stdin)[0]; sys.exit(0 if vm["running"] else "guest is not running after the hold time")'
+          vortax stop --force
+      - name: QEMU log
+        if: always()
+        run: tail -n 80 ~/.local/share/vortax/run/smoke/qemu.log || true

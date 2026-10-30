@@ -1,0 +1,10 @@
+[Unit]
+Description=Vortax web dashboard
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/vortax dashboard --host 127.0.0.1 --port 8765
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

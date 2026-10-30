@@ -1,0 +1,18 @@
+_vortax() {
+    local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
+    local cmds="list profiles plan prepare start run stop kill reboot status info password snapshot export tunnel rm access doctor selftest check-links config secret dashboard"
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "$cmds --help --version" -- "$cur") )
+        return
+    fi
+    case "$prev" in
+        -s|--system) COMPREPLY=( $(compgen -W "$(vortax list 2>/dev/null | awk 'NR>1{print $1}')" -- "$cur") ) ;;
+        --profile) COMPREPLY=( $(compgen -W "$(vortax profiles 2>/dev/null | awk '/^[a-z0-9]+ /{print $1}')" -- "$cur") ) ;;
+        --tunnel) COMPREPLY=( $(compgen -W "none bore ngrok tailscale" -- "$cur") ) ;;
+        --firmware) COMPREPLY=( $(compgen -W "bios uefi" -- "$cur") ) ;;
+        -m|--boot-mode) COMPREPLY=( $(compgen -W "auto iso qcow2 img" -- "$cur") ) ;;
+        --name) COMPREPLY=( $(compgen -W "$(vortax status 2>/dev/null | awk '{print $1}')" -- "$cur") ) ;;
+        *) COMPREPLY=( $(compgen -W "$(vortax "${COMP_WORDS[1]}" --help 2>/dev/null | grep -o -- '--[a-z-]*' | sort -u)" -- "$cur") ) ;;
+    esac
+}
+complete -F _vortax vortax
