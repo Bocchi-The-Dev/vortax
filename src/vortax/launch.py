@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Start a VM end to end: tunnel, host access program, saved settings.
 
 Shared by the CLI and the dashboard so both do exactly the same thing.

@@ -110,4 +110,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t .
 The tests put fake `qemu-system-x86_64` and `qemu-img` (in `tests/stubs`) first on `PATH`, so they run anywhere.
 CI additionally installs the built `.deb` on a clean runner and runs `vortax selftest --boot` against real QEMU.
 
-MIT licensed.
+## License
+
+GNU Affero General Public License v3.0 only (see `LICENSE`). If you run a modified copy as a network
+service, including the dashboard, section 13 requires you to offer its users the corresponding source.
+The dashboard footer and `vortax --license` point at the source for exactly that reason.

@@ -31,6 +31,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  license:
+    name: license is AGPL-3.0-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh packaging/check-license.sh
+
   unit:
     name: unit tests (python ${{ matrix.python }})
     runs-on: ubuntu-latest
@@ -53,7 +61,7 @@ jobs:
       - name: Dashboard script parses
         run: node --check src/vortax/dashboard/static/app.js
       - name: Shell scripts
-        run: shellcheck --severity=warning packaging/build-deb.sh debian/postinst debian/prerm
+        run: shellcheck --severity=warning packaging/build-deb.sh packaging/check-license.sh debian/postinst debian/prerm
 
   deb:
     name: .deb on ${{ matrix.os }}

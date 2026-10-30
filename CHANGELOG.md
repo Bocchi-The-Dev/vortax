@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Relicensed from MIT to **GNU AGPL v3 only**. Added `vortax --license`, SPDX headers and a CI license check.
+
 ## 3.0.0b1
 
 Vortax is now an installable package (`.deb` and `pip`) instead of one ~1000-line workflow file.

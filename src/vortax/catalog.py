@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """The system and profile catalogs (built-in data + the user's own overrides)."""
 
 from __future__ import annotations

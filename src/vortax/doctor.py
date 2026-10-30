@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """`vortax doctor`: what is installed, what is missing, and what that means."""
 
 from __future__ import annotations

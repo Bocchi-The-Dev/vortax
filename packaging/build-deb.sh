@@ -41,6 +41,8 @@ install -m 644 packaging/vortax-dashboard.service "$pkg/usr/lib/systemd/user/vor
 install -m 644 README.md "$pkg/usr/share/doc/vortax/README.md"
 sed "s#https://github.com/CodeVortax/vortax#$home#" debian/copyright > "$pkg/usr/share/doc/vortax/copyright"
 chmod 644 "$pkg/usr/share/doc/vortax/copyright"
+grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" LICENSE || { echo "LICENSE is not the AGPL text" >&2; exit 1; }
+install -m 644 LICENSE "$pkg/usr/share/doc/vortax/LICENSE"
 {
   printf 'vortax (%s) unstable; urgency=low\n\n' "$debver"
   sed -e 's/^/  /' CHANGELOG.md | head -n 40

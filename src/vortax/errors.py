@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 class VortaxError(Exception):
     """An expected, user-facing failure. The CLI prints the message and exits 1."""
 

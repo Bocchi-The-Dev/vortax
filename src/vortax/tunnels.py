@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Make a VM's VNC port reachable from outside: bore, ngrok, tailscale, or nothing.
 
 Tokens are never put on a command line (visible to every user via `ps`): ngrok reads

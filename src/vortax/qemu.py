@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Build the QEMU command line.
 
 `build_command` is a pure function of a `VMPlan`: no I/O, no environment, no
@@ -43,6 +45,9 @@ class VMPlan:
     monitor_sock: str = ""
     virtio_iso: str = ""
     forwards: list[tuple[str, int, int]] = field(default_factory=list)
+    shares: list[tuple[str, str]] = field(default_factory=list)     # (host path, 9p mount tag)
+    usb: list[tuple[int, int]] = field(default_factory=list)        # (vendor id, product id)
+    audio: str = "none"                                              # none | hda | ac97 | sb16
     profile: dict[str, Any] | None = None
     gpu_mode: str = "virtio"
     extra_args: list[str] = field(default_factory=list)
@@ -116,7 +121,9 @@ def host_ram_mb() -> int:
 
 
 def default_ram_mb() -> int:
-    return max(1024, min(8192, host_ram_mb() // 2))
+    from . import envinfo
+    cap = 2048 if envinfo.is_termux() else 8192       # phones: leave room for Android itself
+    return max(1024, min(cap, host_ram_mb() // 2))
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +227,24 @@ def _aarch64(plan: VMPlan) -> list[str]:
     return args
 
 
+def _extra_devices(plan: VMPlan) -> list[str]:
+    """Shared folders, USB passthrough and a sound device: the optional hardware every profile can use."""
+    args: list[str] = []
+    for i, (path, tag) in enumerate(plan.shares):
+        args += ["-virtfs", f"local,path={path},mount_tag={tag},security_model=none,id=share{i}"]
+    for vendor, product in plan.usb:
+        dev = f"usb-host,vendorid=0x{vendor:04x},productid=0x{product:04x}"
+        if plan.arch == "x86_64" and plan.profile is None:
+            dev += ",bus=ehci.0"                       # the controller added for the tablet
+        args += ["-device", dev]
+    if plan.audio != "none":
+        dev = {"hda": ["intel-hda", "hda-duplex"], "ac97": ["AC97"], "sb16": ["sb16"]}[plan.audio]
+        args += ["-audiodev", "none,id=snd0"]
+        for d in dev:
+            args += ["-device", d if d == "intel-hda" else f"{d},audiodev=snd0"]
+    return args
+
+
 def _firmware_args(plan: VMPlan) -> list[str]:
     if plan.firmware != "uefi":
         return []
@@ -246,6 +271,7 @@ def build_command(plan: VMPlan) -> list[str]:
     else:
         raise VortaxError(f"unsupported architecture {plan.arch!r}")
 
+    args += _extra_devices(plan)
     args += _firmware_args(plan)
 
     prof = plan.profile or {}

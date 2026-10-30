@@ -1,8 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Disk image helpers built on qemu-img, with a pure-Python fallback for detection."""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -73,3 +76,26 @@ def human(n: float) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+def resize(path: Path, size: str) -> None:
+    """Grow (or with a leading '-' shrink) a disk image. `size` is e.g. +10G or 80G."""
+    if not re.fullmatch(r"[+-]?\d+(\.\d+)?[KMGT]?", size):
+        raise VortaxError("size looks like 80G or +10G")
+    cmd = [qemu_img(), "resize"] + (["--shrink"] if size.startswith("-") else []) + [str(path), size]
+    rc = subprocess.run(cmd, capture_output=True, text=True)
+    if rc.returncode != 0:
+        raise VortaxError(rc.stderr.strip()[:300] or "qemu-img resize failed")
+
+
+def compact(path: Path) -> tuple[int, int]:
+    """Rewrite a qcow2 with compression to reclaim space. Returns (size before, size after)."""
+    before = size_bytes(path)
+    tmp = path.with_name(path.name + ".compact")
+    rc = subprocess.run([qemu_img(), "convert", "-O", "qcow2", "-c", str(path), str(tmp)],
+                        capture_output=True, text=True)
+    if rc.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        raise VortaxError(rc.stderr.strip()[:300] or "qemu-img convert failed")
+    os.replace(tmp, path)
+    return before, size_bytes(path)

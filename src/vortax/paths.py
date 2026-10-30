@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Where Vortax keeps things.
 
 Everything lives under one data directory so a whole install can be moved,

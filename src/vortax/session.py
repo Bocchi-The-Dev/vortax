@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Instances: prepare the files for a VM, start it, control it, stop it.
 
 An instance is a named VM. Its state lives in <data>/run/<name>/ so the CLI, the
@@ -23,7 +25,7 @@ from typing import Callable
 
 from . import catalog, disk, extract, fetch, monitor, paths, qemu, tunnels
 from .errors import VortaxError
-from .settings import Settings, parse_forward
+from .settings import Settings, parse_forward, parse_share, parse_usb
 
 Log = Callable[[str], None]
 _TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
@@ -461,7 +463,7 @@ def pick_display(requested: int, name: str) -> int:
 
 
 def make_plan(settings: Settings, resolved: catalog.Resolved, inst: Instance, prepared: Prepared,
-              display: int, vnc_password: bool) -> qemu.VMPlan:
+              display: int, vnc_password: bool, extra_forwards: list | tuple = ()) -> qemu.VMPlan:
     warnings = list(prepared.notes)
     profile = resolved.profile
     firmware = settings.firmware
@@ -481,7 +483,9 @@ def make_plan(settings: Settings, resolved: catalog.Resolved, inst: Instance, pr
         nic=settings.nic if resolved.arch == "x86_64" else "virtio-net-pci",
         vnc_bind=settings.vnc_bind, vnc_display=display, vnc_password=vnc_password,
         monitor_sock=str(inst.sock), virtio_iso=settings.virtio_iso,
-        forwards=[parse_forward(f) for f in settings.forward],
+        forwards=[parse_forward(f) for f in settings.forward] + list(extra_forwards),
+        shares=[parse_share(x) for x in settings.shares], usb=[parse_usb(x) for x in settings.usb],
+        audio=settings.audio,
         profile=profile, gpu_mode=settings.gpu_mode, extra_args=settings.extra_args(), warnings=warnings,
     )
 

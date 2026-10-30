@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Run settings.
 
 Precedence, highest first: command line > VORTAX_* environment > config.json > defaults.
@@ -12,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import shlex
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +30,7 @@ ARCHES = ("x86_64", "aarch64")
 ACCEL = ("auto", "kvm", "tcg")
 GPU_MODES = ("virtio", "bochs", "std")
 BOOT_ORDER = ("auto", "disk", "cdrom")
+AUDIO = ("none", "hda", "ac97", "sb16")
 NICS = ("e1000", "e1000e", "virtio-net-pci", "rtl8139", "pcnet", "ne2k_pci")
 
 _SECRET_FIELDS = ("password", "access_password")
@@ -61,6 +65,12 @@ class Settings:
     extra_qemu_args: str = ""       # appended verbatim (shell-style quoting)
     forward: list = field(default_factory=list)   # ["tcp:2222:22", ...] host->guest
     virtio_iso: str = ""            # path to virtio-win.iso to attach
+    shares: list = field(default_factory=list)    # ["/host/dir[:tag]", ...] shared via 9p (Linux guests)
+    usb: list = field(default_factory=list)       # ["vendor:product", ...] host USB devices to pass through
+    audio: str = "none"             # none | hda | ac97 | sb16: sound device for guests that need one
+    ssh: bool = False               # forward a free host port to guest port 22 (see `vortax ssh`)
+    snapshot_on_stop: bool = False  # savevm "auto-<time>" before a graceful stop (qcow2 only)
+    notify: bool = False            # notify (Termux / desktop / VORTAX_NOTIFY_URL) when long jobs finish
 
     def validate(self) -> "Settings":
         paths.check_name(self.name)
@@ -71,6 +81,11 @@ class Settings:
         _one_of("accel", self.accel, ACCEL)
         _one_of("gpu_mode", self.gpu_mode, GPU_MODES)
         _one_of("boot", self.boot, BOOT_ORDER)
+        _one_of("audio", self.audio, AUDIO)
+        for dev in self.usb:
+            parse_usb(dev)
+        for share in self.shares:
+            parse_share(share)
         if self.arch:
             _one_of("arch", self.arch, ARCHES)
         if self.runtime < 0:
@@ -122,6 +137,34 @@ def parse_forward(spec: str) -> tuple[str, int, int]:
     if proto not in ("tcp", "udp") or not (0 < host < 65536) or not (0 < guest < 65536):
         raise VortaxError(f"invalid forward {spec!r}; use [tcp|udp:]HOST:GUEST, e.g. tcp:2222:22")
     return proto, host, guest
+
+
+def parse_usb(spec: str) -> tuple[int, int]:
+    """'046d:c52b' -> (0x046d, 0xc52b)"""
+    try:
+        vendor, product = str(spec).split(":")
+        v, p = int(vendor, 16), int(product, 16)
+    except ValueError:
+        raise VortaxError(f"invalid USB device {spec!r}; use VENDOR:PRODUCT in hex, e.g. 046d:c52b (see lsusb)") from None
+    if not (0 <= v <= 0xFFFF and 0 <= p <= 0xFFFF):
+        raise VortaxError(f"invalid USB device {spec!r}")
+    return v, p
+
+
+def parse_share(spec: str) -> tuple[str, str]:
+    """'/home/me/files:files' -> ('/home/me/files', 'files'); the tag defaults to the folder name."""
+    text = str(spec)
+    path, sep, tag = text.rpartition(":")
+    if not sep or "/" in tag or not path:          # no ':tag' suffix: the whole string is the path
+        path, tag = text, ""
+    path = os.path.expanduser(path)
+    if "," in path:
+        raise VortaxError(f"share path may not contain a comma: {path!r}")
+    if not tag:
+        tag = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(path.rstrip("/"))) or "share"
+    elif not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+        raise VortaxError(f"invalid share tag {tag!r}; use letters, digits, '-', '_' or '.'")
+    return path, tag
 
 
 def _coerce(name: str, current: Any, raw: Any) -> Any:

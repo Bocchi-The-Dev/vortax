@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Work out what a downloaded file is and turn it into something QEMU can boot.
 
 File type detection reads magic bytes in Python instead of shelling out to `file`

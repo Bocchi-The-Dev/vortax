@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Download a source file, resumably, with a fallback chain.
 
 Order: aria2c -> curl -> wget -> pure-Python (urllib). Each tool resumes a partial
@@ -66,6 +68,9 @@ def parse_mediafire(page_html: str) -> str:
 
 
 def resolve_url(url: str) -> str:
+    if url.startswith("latest:"):
+        from . import resolvers
+        return resolvers.resolve_latest(url[len("latest:"):])
     host = urllib.parse.urlparse(url).netloc.lower()
     if host.endswith("mediafire.com") and "/file/" in url:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -97,7 +102,23 @@ def candidate_commands(url: str, dest: Path, have: dict[str, str | None] | None 
     return cmds
 
 
-def _urllib_download(url: str, dest: Path) -> None:
+class Progress:
+    """Throttled percentage reporter for downloads we do ourselves (aria2c and curl draw their own)."""
+
+    def __init__(self, total: int, start: int, log, step: int = 5):
+        self.total, self.done, self.log, self.step, self._last = total, start, log, step, -step
+
+    def add(self, n: int) -> None:
+        self.done += n
+        if not self.total:
+            return
+        pct = int(self.done * 100 / self.total)
+        if pct >= self._last + self.step:
+            self._last = pct - pct % self.step
+            self.log(f"  {pct}%  ({self.done >> 20} / {self.total >> 20} MiB)")
+
+
+def _urllib_download(url: str, dest: Path, log=lambda m: None) -> None:
     have = dest.stat().st_size if dest.exists() else 0
     headers = {"User-Agent": UA}
     if have:
@@ -110,12 +131,15 @@ def _urllib_download(url: str, dest: Path) -> None:
             return
         raise
     mode = "ab" if (have and resp.status == 206) else "wb"
+    length = int(resp.headers.get("Content-Length") or 0)
+    prog = Progress(length + (have if mode == "ab" else 0), have if mode == "ab" else 0, log)
     with resp, open(dest, mode) as out:
         while True:
             chunk = resp.read(1 << 20)
             if not chunk:
                 break
             out.write(chunk)
+            prog.add(len(chunk))
 
 
 def download(source: str, cache: Path, sha256: str = "", log=print) -> Path:
@@ -153,7 +177,7 @@ def download(source: str, cache: Path, sha256: str = "", log=print) -> Path:
     if not ok:
         log("downloading with python urllib")
         try:
-            _urllib_download(real, dest)
+            _urllib_download(real, dest, log)
             ok = dest.exists() and dest.stat().st_size > 0
         except (OSError, ValueError) as exc:
             errors.append(f"urllib: {exc}")

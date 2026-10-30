@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """`vortax selftest`: prove the install works, without needing an OS image.
 
 Level 1 (always): build a QEMU command for every catalog system and profile and check
@@ -44,8 +46,8 @@ def check_plans() -> list[str]:
         if s.profile and s.profile not in profiles:
             problems.append(f"system {sid}: unknown profile {s.profile}")
         for mode, url in s.sources.items():
-            if url and not url.startswith(("http://", "https://")):
-                problems.append(f"system {sid}: {mode} source is not an http(s) URL")
+            if url and not url.startswith(("http://", "https://", "latest:")):
+                problems.append(f"system {sid}: {mode} source is not an http(s) URL or latest: source")
     for name, prof in profiles.items():
         for fw in ("bios",):
             plan = qemu.VMPlan(name="t", arch="x86_64", accel="tcg", firmware=fw, disk_path="/d.qcow2",

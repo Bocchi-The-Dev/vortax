@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Command line interface."""
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__, access, catalog, disk, doctor, fetch, launch, paths, qemu, selftest, session, settings
+from . import __source_url__, __version__, access, catalog, disk, doctor, fetch, launch, paths, qemu, selftest, session, settings
 from .errors import VortaxError
 
 DESCRIPTION = """\
@@ -461,6 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vortax", description=DESCRIPTION,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"vortax {__version__}")
+    p.add_argument("--license", action="store_true", help="show the license and where to get the source")
     sub = p.add_subparsers(dest="command", metavar="<command>")
 
     def add(name, fn, help_, **kw):
@@ -562,6 +565,12 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)      # `vortax list | head` should not traceback
     parser = build_parser()
     ns = parser.parse_args(argv)
+    if getattr(ns, "license", False):
+        print(f"vortax {__version__} is free software under the GNU AGPL v3 (AGPL-3.0-only).\n"
+              f"Corresponding source: {__source_url__}\n"
+              "Full text: /usr/share/doc/vortax/LICENSE or https://www.gnu.org/licenses/agpl-3.0.html\n"
+              "Section 13: if you run a modified version as a network service, offer its users the source.")
+        return 0
     if not getattr(ns, "fn", None):
         parser.print_help()
         return 0

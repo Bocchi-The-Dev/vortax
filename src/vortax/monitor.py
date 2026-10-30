@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Vortax contributors. See LICENSE.
 """Talk to QEMU's human monitor over a unix socket.
 
 The socket lives in the VM's private run directory (0700), so unlike a localhost TCP
