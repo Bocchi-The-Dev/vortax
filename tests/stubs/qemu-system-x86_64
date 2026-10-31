@@ -35,6 +35,8 @@ while True:
     reply = ""
     if cmd.startswith("set_password vnc"):
         with open(sock_path + ".vncpw", "w") as fh: fh.write(cmd.split(" ", 2)[2])
+    elif cmd.startswith("screendump "):
+        with open(cmd.split(" ", 1)[1], "wb") as fh: fh.write(b"P6\n# c\n2 2\n255\n" + bytes(range(12)))
     elif cmd == "info status":
         reply = "VM status: running"
     elif cmd.startswith("savevm") or cmd.startswith("loadvm") or cmd.startswith("delvm") or cmd == "system_reset":

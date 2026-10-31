@@ -22,6 +22,8 @@ if a[0] == "convert":
     with open(dst, "wb") as out:
         out.write(MAGIC)
     sys.exit(0)
+if a[0] == "resize":
+    sys.exit(0)
 if a[0] == "snapshot":
     print("Snapshot list:\nID TAG\n1 snap1" if "-l" in a else ""); sys.exit(0)
 sys.exit(1)

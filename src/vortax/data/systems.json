@@ -1,358 +1,406 @@
 {
-  "_comment": "Built-in catalog. A system may offer several boot modes: iso (installer, disk created empty), qcow2 (pre-built disk, usually archived), img (raw disk booted as-is). Empty sources are intentional template slots (copyrighted media). Add or override entries in ~/.config/vortax/systems.json (same schema, matched by id).",
-  "systems": [
-    {
-      "id": "bazzite",
-      "name": "Bazzite OS",
-      "family": "linux",
-      "icon": "robot",
-      "disk_gb": 60,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://download.bazzite.gg/bazzite-stable-live.iso"
-      },
-      "aliases": [
-        "bazite"
-      ]
-    },
-    {
-      "id": "cutefish",
-      "name": "Cutefish OS",
-      "family": "linux",
-      "icon": "fish",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://netix.dl.sourceforge.net/project/cutefish-ubuntu/ISO/Ubuntu/CutefishOS-22.04.0-YoYo-beta-amd64.iso?viasf=1",
-        "qcow2": "https://www.mediafire.com/file/cskqtp25wya8p4e/cutefish.7z"
-      }
-    },
-    {
-      "id": "debian",
-      "name": "Debian 13.2",
-      "family": "linux",
-      "icon": "debian",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-13.2.0-amd64-DVD-1.iso",
-        "qcow2": "https://www.mediafire.com/file/4x02re7l2ge3a6h/debian.7z"
-      }
-    },
-    {
-      "id": "deepin",
-      "name": "Deepin 25.0",
-      "family": "linux",
-      "icon": "desktop",
-      "disk_gb": 60,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://cdimage-cdn77.deepin.com/deepin-cd/25.0.1/amd64/deepin-desktop-community-25.0.1-amd64.iso",
-        "qcow2": "https://www.mediafire.com/file/ozwa2vyxt4hz6wu/dipeen.7z/"
-      }
-    },
-    {
-      "id": "elementary",
-      "name": "elementary OS",
-      "family": "linux",
-      "icon": "circle-notch",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://www.mediafire.com/file/vhk0q3w23kckfgg/elementary.iso",
-        "qcow2": "https://www.mediafire.com/file/thxygwj4msofcw7/elementary.7z"
-      }
-    },
-    {
-      "id": "fedora",
-      "name": "Fedora 43 KDE",
-      "family": "linux",
-      "icon": "fedora",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://mirror.slu.cz/fedora/linux/releases/43/KDE/x86_64/iso/Fedora-KDE-Desktop-Live-43-1.6.x86_64.iso",
-        "qcow2": "https://www.mediafire.com/file/5gora3zva802ia9/fedora.7z"
-      }
-    },
-    {
-      "id": "garuda",
-      "name": "Garuda Linux",
-      "family": "linux",
-      "icon": "bird",
-      "disk_gb": 60,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://iso.builds.garudalinux.org/iso/latest/garuda/mokka/latest.iso?r2=1",
-        "qcow2": "https://www.mediafire.com/file/4qpifo9ncfxon1z/garuda.7z"
-      }
-    },
-    {
-      "id": "kali",
-      "name": "Kali Linux",
-      "family": "linux",
-      "icon": "skull",
-      "disk_gb": 50,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://kali.download/base-images/kali-2025.3/kali-linux-2025.3-live-amd64.iso",
-        "qcow2": "https://kali.mirror.garr.it/kali-images/current/kali-linux-2025.3-qemu-amd64.7z"
-      }
-    },
-    {
-      "id": "mint",
-      "name": "Linux Mint 22.2",
-      "family": "linux",
-      "icon": "leaf",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://pub.linuxmint.io/stable/22.2/linuxmint-22.2-cinnamon-64bit.iso",
-        "qcow2": "https://www.mediafire.com/file/a4qyactev4kzc0q/mint.7z/"
-      }
-    },
-    {
-      "id": "manjaro",
-      "name": "Manjaro GNOME",
-      "family": "linux",
-      "icon": "linux",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://download.manjaro.org/gnome/25.0.10/manjaro-gnome-25.0.10-251013-linux612.iso",
-        "qcow2": "https://www.mediafire.com/file/ynn1o8flu6v8mhd/manjaro.7z"
-      }
-    },
-    {
-      "id": "pear",
-      "name": "Pear OS",
-      "family": "linux",
-      "icon": "apple-alt",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://www.mediafire.com/file/7ztcyqd2ggiv58p/pearOS-NiceC0re-2025.11-x86_64.iso"
-      }
-    },
-    {
-      "id": "pop_os",
-      "name": "Pop!_OS 22.04",
-      "family": "linux",
-      "icon": "bolt",
-      "disk_gb": 50,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://iso.pop-os.org/22.04/amd64/intel/58/pop-os_22.04_amd64_intel_58.iso",
-        "qcow2": "https://www.mediafire.com/file/lbrebo479z4fq3g/pop_os.7z"
-      }
-    },
-    {
-      "id": "ubuntu",
-      "name": "Ubuntu 25.10",
-      "family": "linux",
-      "icon": "ubuntu",
-      "disk_gb": 50,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://releases.ubuntu.com/25.10/ubuntu-25.10-desktop-amd64.iso",
-        "qcow2": "https://www.mediafire.com/file/m2x4f34hdxqfndd/ubuntu.7z"
-      }
-    },
-    {
-      "id": "winux",
-      "name": "Winux 11",
-      "family": "linux",
-      "icon": "wind",
-      "disk_gb": 50,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://netix.dl.sourceforge.net/project/windows-linux/winux-11.25.11-noble-lts.iso?viasf=1",
-        "qcow2": "https://www.mediafire.com/file/jljgb4yt99clu5s/winux.7z"
-      }
-    },
-    {
-      "id": "zorin",
-      "name": "Zorin OS 18",
-      "family": "linux",
-      "icon": "z",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://fosszone.csd.auth.gr/zorinos/18/Zorin-OS-18-Core-64-bit.iso",
-        "qcow2": "https://www.mediafire.com/file/f7hkbwcd05fucyx/zorin.7z"
-      }
-    },
-    {
-      "id": "bliss",
-      "name": "Bliss OS 15.9",
-      "family": "android",
-      "icon": "android",
-      "disk_gb": 32,
-      "arch": "x86_64",
-      "sources": {
-        "iso": "https://dn720203.ca.archive.org/0/items/Bliss-v15.9-x86_64-OFFICIAL-gapps-20240114/Bliss-v15.9-x86_64-OFFICIAL-gapps-20240114.iso",
-        "qcow2": "https://www.mediafire.com/file/2zuxhk4dtqa735l/bliss.7z/"
-      }
-    },
-    {
-      "id": "batocera",
-      "name": "Batocera",
-      "family": "game",
-      "icon": "gamepad",
-      "disk_gb": 8,
-      "arch": "x86_64",
-      "sources": {
-        "img": "https://sour-silent-prune.6fcff5d8.katapult.cloud/images/batocera-x86_64-43.1-20260529.img.gz"
-      },
-      "profile": "batocera"
-    },
-    {
-      "id": "win10",
-      "name": "Windows 10 LTSC",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 80,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "win11",
-      "name": "Windows 11 LTSC",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 80,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "win7",
-      "name": "Windows 7 Ultimate",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 60,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "win8.1",
-      "name": "Windows 8.1 Industry",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 60,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "Vista",
-      "name": "Windows Vista SP2",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 40,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "XP",
-      "name": "Windows XP Pro x64",
-      "family": "windows",
-      "icon": "windows",
-      "disk_gb": 20,
-      "arch": "x86_64",
-      "sources": {},
-      "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
-    },
-    {
-      "id": "win1x",
-      "name": "Windows 1.x",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win1x",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "win2x",
-      "name": "Windows 2.x",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win2x",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "win2000",
-      "name": "Windows 2000",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win2000",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "win31",
-      "name": "Windows 3.1",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win31",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "win95",
-      "name": "Windows 95",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win95",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "win98",
-      "name": "Windows 98",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "win98",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "winme",
-      "name": "Windows Me",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "winme",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    },
-    {
-      "id": "winnt4",
-      "name": "Windows NT 4.0",
-      "family": "retro",
-      "icon": "windows",
-      "disk_gb": 0,
-      "arch": "x86_64",
-      "sources": {},
-      "profile": "winnt4",
-      "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
-    }
-  ]
+ "_comment": "Built-in catalog. A system may offer several boot modes: iso (installer, disk created empty), qcow2 (pre-built disk, usually archived), img (raw disk booted as-is). Empty sources are intentional template slots (copyrighted media). Add or override entries in ~/.config/vortax/systems.json (same schema, matched by id).",
+ "systems": [
+  {
+   "id": "alpine",
+   "name": "Alpine Linux (virt)",
+   "family": "linux",
+   "icon": "disk",
+   "disk_gb": 8,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "latest:alpine"
+   },
+   "notes": "Tiny; installs in minutes. ISO name is looked up when you run it (unverified until check-links passes)."
+  },
+  {
+   "id": "arch",
+   "name": "Arch Linux",
+   "family": "linux",
+   "icon": "robot",
+   "disk_gb": 30,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "latest:arch"
+   },
+   "notes": "Latest monthly ISO, looked up at run time; install with archinstall."
+  },
+  {
+   "id": "batocera",
+   "name": "Batocera",
+   "family": "game",
+   "icon": "gamepad",
+   "disk_gb": 8,
+   "arch": "x86_64",
+   "sources": {
+    "img": "https://sour-silent-prune.6fcff5d8.katapult.cloud/images/batocera-x86_64-43.1-20260529.img.gz"
+   },
+   "profile": "batocera"
+  },
+  {
+   "id": "bazzite",
+   "name": "Bazzite OS",
+   "family": "linux",
+   "icon": "robot",
+   "disk_gb": 60,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://download.bazzite.gg/bazzite-stable-live.iso"
+   },
+   "aliases": [
+    "bazite"
+   ]
+  },
+  {
+   "id": "bliss",
+   "name": "Bliss OS 15.9",
+   "family": "android",
+   "icon": "android",
+   "disk_gb": 32,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://dn720203.ca.archive.org/0/items/Bliss-v15.9-x86_64-OFFICIAL-gapps-20240114/Bliss-v15.9-x86_64-OFFICIAL-gapps-20240114.iso",
+    "qcow2": "https://www.mediafire.com/file/2zuxhk4dtqa735l/bliss.7z/"
+   }
+  },
+  {
+   "id": "cutefish",
+   "name": "Cutefish OS",
+   "family": "linux",
+   "icon": "fish",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://netix.dl.sourceforge.net/project/cutefish-ubuntu/ISO/Ubuntu/CutefishOS-22.04.0-YoYo-beta-amd64.iso?viasf=1",
+    "qcow2": "https://www.mediafire.com/file/cskqtp25wya8p4e/cutefish.7z"
+   }
+  },
+  {
+   "id": "debian",
+   "name": "Debian 13.2",
+   "family": "linux",
+   "icon": "debian",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-13.2.0-amd64-DVD-1.iso",
+    "qcow2": "https://www.mediafire.com/file/4x02re7l2ge3a6h/debian.7z"
+   }
+  },
+  {
+   "id": "deepin",
+   "name": "Deepin 25.0",
+   "family": "linux",
+   "icon": "desktop",
+   "disk_gb": 60,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://cdimage-cdn77.deepin.com/deepin-cd/25.0.1/amd64/deepin-desktop-community-25.0.1-amd64.iso",
+    "qcow2": "https://www.mediafire.com/file/ozwa2vyxt4hz6wu/dipeen.7z/"
+   }
+  },
+  {
+   "id": "elementary",
+   "name": "elementary OS",
+   "family": "linux",
+   "icon": "circle-notch",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://www.mediafire.com/file/vhk0q3w23kckfgg/elementary.iso",
+    "qcow2": "https://www.mediafire.com/file/thxygwj4msofcw7/elementary.7z"
+   }
+  },
+  {
+   "id": "fedora",
+   "name": "Fedora 43 KDE",
+   "family": "linux",
+   "icon": "fedora",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://mirror.slu.cz/fedora/linux/releases/43/KDE/x86_64/iso/Fedora-KDE-Desktop-Live-43-1.6.x86_64.iso",
+    "qcow2": "https://www.mediafire.com/file/5gora3zva802ia9/fedora.7z"
+   }
+  },
+  {
+   "id": "garuda",
+   "name": "Garuda Linux",
+   "family": "linux",
+   "icon": "bird",
+   "disk_gb": 60,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://iso.builds.garudalinux.org/iso/latest/garuda/mokka/latest.iso?r2=1",
+    "qcow2": "https://www.mediafire.com/file/4qpifo9ncfxon1z/garuda.7z"
+   }
+  },
+  {
+   "id": "kali",
+   "name": "Kali Linux",
+   "family": "linux",
+   "icon": "skull",
+   "disk_gb": 50,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://kali.download/base-images/kali-2025.3/kali-linux-2025.3-live-amd64.iso",
+    "qcow2": "https://kali.mirror.garr.it/kali-images/current/kali-linux-2025.3-qemu-amd64.7z"
+   }
+  },
+  {
+   "id": "manjaro",
+   "name": "Manjaro GNOME",
+   "family": "linux",
+   "icon": "linux",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://download.manjaro.org/gnome/25.0.10/manjaro-gnome-25.0.10-251013-linux612.iso",
+    "qcow2": "https://www.mediafire.com/file/ynn1o8flu6v8mhd/manjaro.7z"
+   }
+  },
+  {
+   "id": "mint",
+   "name": "Linux Mint 22.2",
+   "family": "linux",
+   "icon": "leaf",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://pub.linuxmint.io/stable/22.2/linuxmint-22.2-cinnamon-64bit.iso",
+    "qcow2": "https://www.mediafire.com/file/a4qyactev4kzc0q/mint.7z/"
+   }
+  },
+  {
+   "id": "pear",
+   "name": "Pear OS",
+   "family": "linux",
+   "icon": "apple-alt",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://www.mediafire.com/file/7ztcyqd2ggiv58p/pearOS-NiceC0re-2025.11-x86_64.iso"
+   }
+  },
+  {
+   "id": "pop_os",
+   "name": "Pop!_OS 22.04",
+   "family": "linux",
+   "icon": "bolt",
+   "disk_gb": 50,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://iso.pop-os.org/22.04/amd64/intel/58/pop-os_22.04_amd64_intel_58.iso",
+    "qcow2": "https://www.mediafire.com/file/lbrebo479z4fq3g/pop_os.7z"
+   }
+  },
+  {
+   "id": "tumbleweed",
+   "name": "openSUSE Tumbleweed (net)",
+   "family": "linux",
+   "icon": "robot",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "latest:tumbleweed"
+   },
+   "notes": "Network installer; needs internet inside the guest."
+  },
+  {
+   "id": "ubuntu",
+   "name": "Ubuntu 25.10",
+   "family": "linux",
+   "icon": "ubuntu",
+   "disk_gb": 50,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://releases.ubuntu.com/25.10/ubuntu-25.10-desktop-amd64.iso",
+    "qcow2": "https://www.mediafire.com/file/m2x4f34hdxqfndd/ubuntu.7z"
+   }
+  },
+  {
+   "id": "ubuntu-server",
+   "name": "Ubuntu Server 24.04 LTS",
+   "family": "linux",
+   "icon": "server",
+   "disk_gb": 30,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "latest:ubuntu-server"
+   },
+   "notes": "Latest 24.04.x live-server ISO, looked up at run time."
+  },
+  {
+   "id": "Vista",
+   "name": "Windows Vista SP2",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "win10",
+   "name": "Windows 10 LTSC",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 80,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "win11",
+   "name": "Windows 11 LTSC",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 80,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "win1x",
+   "name": "Windows 1.x",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win1x",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "win2000",
+   "name": "Windows 2000",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win2000",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "win2x",
+   "name": "Windows 2.x",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win2x",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "win31",
+   "name": "Windows 3.1",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win31",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "win7",
+   "name": "Windows 7 Ultimate",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 60,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "win8.1",
+   "name": "Windows 8.1 Industry",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 60,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "win95",
+   "name": "Windows 95",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win95",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "win98",
+   "name": "Windows 98",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "win98",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "winme",
+   "name": "Windows Me",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "winme",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "winnt4",
+   "name": "Windows NT 4.0",
+   "family": "retro",
+   "icon": "windows",
+   "disk_gb": 0,
+   "arch": "x86_64",
+   "sources": {},
+   "profile": "winnt4",
+   "notes": "Template slot: bring your own media with --source (CD) and, for floppy installs, --floppy-url."
+  },
+  {
+   "id": "winux",
+   "name": "Winux 11",
+   "family": "linux",
+   "icon": "wind",
+   "disk_gb": 50,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://netix.dl.sourceforge.net/project/windows-linux/winux-11.25.11-noble-lts.iso?viasf=1",
+    "qcow2": "https://www.mediafire.com/file/jljgb4yt99clu5s/winux.7z"
+   }
+  },
+  {
+   "id": "XP",
+   "name": "Windows XP Pro x64",
+   "family": "windows",
+   "icon": "windows",
+   "disk_gb": 20,
+   "arch": "x86_64",
+   "sources": {},
+   "notes": "Microsoft software: no link is bundled. Supply your own legally obtained image with --source <url|path> or add it to ~/.config/vortax/systems.json."
+  },
+  {
+   "id": "zorin",
+   "name": "Zorin OS 18",
+   "family": "linux",
+   "icon": "z",
+   "disk_gb": 40,
+   "arch": "x86_64",
+   "sources": {
+    "iso": "https://fosszone.csd.auth.gr/zorinos/18/Zorin-OS-18-Core-64-bit.iso",
+    "qcow2": "https://www.mediafire.com/file/f7hkbwcd05fucyx/zorin.7z"
+   }
+  }
+ ]
 }

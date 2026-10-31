@@ -47,6 +47,29 @@ qcow2 stays qcow2, anything else is converted).
 
 After an installer finishes, boot from the disk instead of the ISO: `vortax start --name lab --boot disk`.
 
+### More things it can do
+
+```sh
+vortax wizard                                   # answer a few questions, optionally save them as a preset
+vortax preset save work --system ubuntu-server --ram-mb 4096 --ssh --share ~/code:code
+vortax run work                                 # a preset, a catalog id or a local file all work as the target
+vortax start lab --ssh && vortax ssh -u me      # SSH forwarded to 127.0.0.1 (random free port)
+vortax cp ./notes.txt vm:/home/me/              # scp to/from the guest
+vortax start lab --share ~/code:code            # 9p folder; in Linux: mount -t 9p -o trans=virtio code /mnt
+vortax start lab --usb 046d:c52b --audio hda    # USB passthrough and an emulated sound card
+vortax start lab --snapshot-on-stop             # stop saves the live state, the next start resumes it (qcow2)
+vortax start lab --runtime 90                   # a background watcher stops it after 90 minutes
+vortax screenshot --name lab --out lab.png      # PNG of the guest display
+vortax disk resize +20G --name lab              # also: disk info, disk compact
+vortax logs -f --name lab                       # follow the QEMU log
+```
+
+New catalog entries (`alpine`, `ubuntu-server`, `arch`, `tumbleweed`) look up the current ISO name when you run
+them (`latest:` sources), so they do not go stale when a distro renames files.
+
+On Termux, RAM defaults are capped for phones, `vortax doctor` prints the `pkg install` line for missing tools and a
+wake lock is taken while a VM runs (needs `termux-api`). `--notify` uses `termux-notification` when it exists.
+
 ### Settings come from the environment too
 
 Every option has a `VORTAX_<NAME>` variable, which is how a script or CI job drives it without pasting values
@@ -66,8 +89,14 @@ vortax dashboard            # prints http://127.0.0.1:8765/#token=...
 ```
 
 Overview with live CPU/RAM/disk, start/stop/reboot/kill, launching systems from the catalog with progress,
-VNC password reveal/change, tunnels, snapshots, browser VNC (needs `websockify` + `novnc`), storage cleanup,
-logs and a health page. It works at phone width. The token sits in the URL fragment, so it is never sent to the
+VNC password reveal/change, tunnels, snapshots, storage cleanup, logs and a health page.
+
+* **Console**: the guest's screen in a browser tab, no extra software. The dashboard proxies VNC over a WebSocket and
+  answers QEMU's password challenge itself, so the browser never sees the VNC password. Mouse, keyboard, touch
+  (tap, long-press = right click), Ctrl/Alt/Win toggles, Ctrl+Alt+Del, "Type text", screenshot, fullscreen.
+* **Settings**: edit default RAM/CPU/tunnel/etc, save and run presets, dark or light theme, English or Arabic (RTL),
+  browser notifications when a VM starts or stops.
+* It works at phone width. The token sits in the URL fragment, so it is never sent to the
 server or written to logs. Binding to a non-loopback address is possible (`--host`) but it is plain HTTP:
 prefer an SSH tunnel or Tailscale.
 

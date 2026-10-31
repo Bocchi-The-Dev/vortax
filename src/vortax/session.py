@@ -184,6 +184,19 @@ class Instance:
         self.update_state(tunnel={})
         if not pid:
             return False
+        if self.state().get("snapshot_on_stop") and self.sock.exists():
+            d = self.existing_disk()
+            if d and d.suffix == ".qcow2":
+                try:
+                    log("saving the running state so the next start resumes where you left off")
+                    monitor.hmp(str(self.sock), f"savevm {AUTOSAVE}", 180.0)
+                    monitor.hmp(str(self.sock), "quit", 3.0)
+                    if _wait_exit(pid, 10):
+                        self.update_state(pid=0)
+                        self._notify("stopped", "state saved")
+                        return True
+                except VortaxError as exc:
+                    log(f"could not save the state ({exc}); shutting down normally")
         if graceful and self.sock.exists():
             try:
                 monitor.hmp(str(self.sock), "system_powerdown")
@@ -200,6 +213,32 @@ class Instance:
                 return True
         self.kill()
         return True
+
+    def _notify(self, what: str, detail: str = "") -> None:
+        if self.state().get("notify"):
+            from . import notify
+            notify.send(f"vortax: {self.name} {what}", detail)
+
+    def screenshot(self, out: Path) -> Path:
+        """Capture the guest display to a PNG (QEMU writes a PPM, converted here)."""
+        from . import png
+        ppm = self.run / "screen.ppm"
+        ppm.unlink(missing_ok=True)
+        self.hmp(f"screendump {ppm}", timeout=15.0)
+        for _ in range(20):
+            if ppm.exists() and ppm.stat().st_size > 0:
+                break
+            time.sleep(0.1)
+        else:
+            raise VortaxError("QEMU did not write a screendump")
+        try:
+            out.write_bytes(png.ppm_to_png(ppm.read_bytes()))
+        finally:
+            ppm.unlink(missing_ok=True)
+        return out
+
+    def ssh_port(self) -> int:
+        return int(self.state().get("ssh_port") or 0)
 
     def kill(self) -> bool:
         pid = self.pid()
@@ -236,6 +275,30 @@ class Instance:
         if rc.returncode != 0:
             raise VortaxError(rc.stderr.strip()[:300] or "qemu-img snapshot failed")
         return f"snapshot {action} ok: {tag}"
+
+
+AUTOSAVE = "vortax-auto"
+
+
+def _snapshot_tags(disk_path) -> set[str]:
+    try:
+        out = subprocess.run([disk.qemu_img(), "snapshot", "-l", str(disk_path)],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError, VortaxError):
+        return set()
+    return {parts[1] for parts in (line.split() for line in out.splitlines()) if len(parts) > 1}
+
+
+def _free_port(start: int) -> int:
+    import socket
+    for port in range(start, start + 200):
+        with socket.socket() as sk:
+            try:
+                sk.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise VortaxError("no free local port for the SSH forward")
 
 
 def _is_qemu(pid: int) -> bool:
@@ -532,8 +595,18 @@ def start(settings: Settings, resolved: catalog.Resolved, inst: Instance, prepar
         qemu.require_binary(resolved.arch)
     display = pick_display(settings.vnc_display, inst.name)
     password = "" if dry_run else _load_vnc_password(inst, settings, log)
+    ssh_port = 0
+    extra_fw: list = []
+    if settings.ssh:
+        ssh_port = _free_port(2222)
+        extra_fw.append(("tcp", ssh_port, 22))
     plan = make_plan(settings, resolved, inst, prepared, display,
-                     vnc_password=(settings.no_password is False) if dry_run else bool(password))
+                     vnc_password=(settings.no_password is False) if dry_run else bool(password),
+                     extra_forwards=extra_fw)
+    if settings.snapshot_on_stop and prepared.disk_format == "qcow2" and not dry_run \
+            and AUTOSAVE in _snapshot_tags(prepared.disk_path):
+        plan.extra_args = list(plan.extra_args) + ["-loadvm", AUTOSAVE]
+        log("resuming the saved session state")
     argv = qemu.build_command(plan)
     for w in plan.warnings:
         log(f"warning: {w}")
@@ -583,6 +656,9 @@ def start(settings: Settings, resolved: catalog.Resolved, inst: Instance, prepar
         "access": settings.access, "tunnel": {}, "cmd": argv,
         "runtime": settings.runtime,
         "deadline": "",
+        "ssh_port": ssh_port,
+        "snapshot_on_stop": bool(settings.snapshot_on_stop),
+        "notify": bool(settings.notify),
     }
     if settings.runtime:
         state["deadline"] = datetime.fromtimestamp(time.time() + settings.runtime * 60, timezone.utc) \

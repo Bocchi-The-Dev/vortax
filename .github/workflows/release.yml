@@ -1,0 +1,101 @@
+name: Release
+
+# Push a tag such as v3.1.0b1 to build the .deb, publish a GitHub release and (optionally) update the apt repository.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          ver="$(python3 -c "import re,pathlib;print(re.search(r'__version__ = \"(.+?)\"',pathlib.Path('src/vortax/__init__.py').read_text()).group(1))")"
+          [ "${TAG#v}" = "$ver" ] || { echo "tag $TAG does not match __version__ $ver"; exit 1; }
+          sh packaging/check-license.sh
+
+      - name: Unit tests
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -t .
+
+      - name: Build
+        env:
+          MAINTAINER: "Vortax <noreply@users.noreply.github.com>"
+          HOMEPAGE: ${{ github.server_url }}/${{ github.repository }}
+        run: packaging/build-deb.sh
+
+      - name: Install and boot a tiny guest with real QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ./dist/*.deb
+          vortax doctor
+          vortax selftest --boot --timeout 90
+
+      - name: Release notes, checksums, source archive
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 packaging/changelog-section.py "$TAG" > notes.md
+          git archive --format=tar.gz --prefix="vortax-${TAG#v}/" -o "dist/vortax-${TAG#v}-source.tar.gz" HEAD
+          ( cd dist && sha256sum ./* > SHA256SUMS )
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=""
+          case "$TAG" in *[a-zA-Z]*) flags="--prerelease";; esac
+          # shellcheck disable=SC2086
+          gh release create "$TAG" dist/* --title "Vortax ${TAG#v}" --notes-file notes.md $flags
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+
+  apt:
+    name: signed apt repository (needs the APT_GPG_PRIVATE_KEY secret)
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb
+          path: dist
+      - name: Build and sign
+        id: sign
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$KEY" ]; then echo "no APT_GPG_PRIVATE_KEY secret; skipping the apt repository"; echo "built=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          printf '%s' "$KEY" | gpg --batch --import
+          GPG_KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          export GPG_KEY_ID
+          packaging/make-apt-repo.sh dist apt
+          echo "built=yes" >> "$GITHUB_OUTPUT"
+      - uses: actions/configure-pages@v5
+        if: steps.sign.outputs.built == 'yes'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.sign.outputs.built == 'yes'
+        with:
+          path: apt
+      - uses: actions/deploy-pages@v4
+        if: steps.sign.outputs.built == 'yes'

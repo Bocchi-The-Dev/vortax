@@ -149,6 +149,9 @@ def download(source: str, cache: Path, sha256: str = "", log=print) -> Path:
         if not path.is_file():
             raise VortaxError(f"local source not found: {path}")
         return path
+    if source.startswith("latest:"):
+        source = resolve_url(source)          # cache under the real file name so new releases are fetched
+        log(f"latest release: {source}")
     if not source.startswith(("http://", "https://")):
         raise VortaxError(f"unsupported source {source!r}: use an http(s) URL or a local path")
 

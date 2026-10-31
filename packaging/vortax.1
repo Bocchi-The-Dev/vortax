@@ -26,6 +26,16 @@ Control and inspect VMs.
 .B password, snapshot, export, tunnel, rm
 Change the VNC password, manage qcow2 snapshots, export a disk (optionally with rclone), manage tunnels, delete a VM.
 .TP
+.B wizard, preset
+Interactive setup; save, list, show and remove named run presets. A preset name, catalog id or local file can be
+given as the positional target of plan, prepare, start and run.
+.TP
+.B logs, screenshot, disk
+Show or follow the QEMU log; save the guest display as a PNG; show, resize or compact a VM disk.
+.TP
+.B ssh, cp
+For VMs started with --ssh: open a shell, or copy files with vm:PATH.
+.TP
 .B access
 Install optional host remote-access programs (rdp, nomachine, rustdesk, anydesk).
 .TP
@@ -34,6 +44,28 @@ Serve the web dashboard (127.0.0.1:8765 by default, token protected).
 .TP
 .B doctor, selftest, check-links
 Check the installation; boot a tiny test guest; check catalog URLs.
+.SH OPTIONS WORTH KNOWING
+.TP
+.B --share PATH[:TAG]
+Share a host folder over 9p. Repeatable.
+.TP
+.B --usb VID:PID
+Pass a host USB device through. Repeatable.
+.TP
+.B --audio none|hda|ac97|sb16
+Emulated sound card.
+.TP
+.B --ssh
+Forward a free local port to the guest's port 22.
+.TP
+.B --snapshot-on-stop
+Save the live state on stop and resume it on the next start (qcow2 disks).
+.TP
+.B --notify
+Send a notification when the VM starts or stops.
+.TP
+.B --license
+Print the license (GNU AGPL v3) and where the source is.
 .SH ENVIRONMENT
 Every run setting can be given as VORTAX_<NAME> (VORTAX_SYSTEM, VORTAX_TUNNEL, VORTAX_PASSWORD, ...).
 Command line options override the environment, which overrides config.json.

@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __source_url__, __version__, access, catalog, disk, doctor, fetch, launch, paths, qemu, selftest, session, settings
+from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, launch, paths, presets, qemu, selftest, session, settings
 from .errors import VortaxError
 
 DESCRIPTION = """\
@@ -36,6 +36,8 @@ def log(msg: str) -> None:
 
 def _add_run_options(p: argparse.ArgumentParser) -> None:
     g = p.add_argument_group("what to run")
+    g.add_argument("target", nargs="?", help="a preset name, a catalog id, or a local ISO/disk path")
+    g.add_argument("--preset", help="saved preset to start from, see `vortax preset list`")
     g.add_argument("--name", help="VM name; names its disk and state (default: vortax)")
     g.add_argument("-s", "--system", help="catalog id, see `vortax list`")
     g.add_argument("-m", "--boot-mode", choices=settings.BOOT_MODES, help="iso, qcow2 or img (default: auto)")
@@ -56,6 +58,14 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
     g.add_argument("--virtio-iso", help="path to virtio-win.iso to attach (Windows guests)")
     g.add_argument("--forward", action="append", metavar="[tcp|udp:]HOST:GUEST",
                    help="forward a host port (bound to 127.0.0.1) to the guest; repeatable")
+    g.add_argument("--share", action="append", metavar="PATH[:TAG]",
+                   help="share a host folder with the guest over 9p (mount_tag TAG); repeatable")
+    g.add_argument("--usb", action="append", metavar="VID:PID", help="pass a host USB device through; repeatable")
+    g.add_argument("--audio", choices=settings.AUDIO, help="emulated sound card (default none)")
+    g.add_argument("--ssh", action="store_true", default=None, help="forward a local port to the guest's SSH (22)")
+    g.add_argument("--snapshot-on-stop", action="store_true", default=None,
+                   help="save the live state on stop and resume it on next start (qcow2 only)")
+    g.add_argument("--notify", action="store_true", default=None, help="send a notification on start/stop")
     g.add_argument("--extra-qemu-args", help="raw QEMU arguments appended verbatim")
     g = p.add_argument_group("access")
     g.add_argument("--vnc-display", type=int, help="VNC display number; port = 5900 + n (default: first free)")
@@ -67,21 +77,51 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
     g.add_argument("--runtime", type=int, help="minutes before `run` stops the VM (0 = until Ctrl-C)")
 
 
+_LIST_FIELDS = ("forward", "shares", "usb")
+_BOOL_FIELDS = ("no_password", "ssh", "snapshot_on_stop", "notify")
+
+
+def _apply_target(ns: argparse.Namespace) -> dict:
+    """Positional target: preset name, catalog id or a local file. Returns preset values (config layer)."""
+    preset = {}
+    target = getattr(ns, "target", None)
+    if getattr(ns, "preset", None):
+        preset = dict(presets.get(ns.preset))
+    if target:
+        if target in presets.load() and not getattr(ns, "preset", None):
+            preset = dict(presets.get(target))
+        else:
+            try:
+                catalog.find_system(target)
+                ns.system = ns.system or target
+            except VortaxError:
+                if os.path.exists(os.path.expanduser(target)) or target.startswith(("http://", "https://")):
+                    ns.source = ns.source or target
+                else:
+                    raise
+    return preset
+
+
 def _settings_from(ns: argparse.Namespace) -> settings.Settings:
+    preset = _apply_target(ns)
+    ns.share = getattr(ns, "share", None)
     cli = {f: getattr(ns, f, None) for f in settings.Settings.__dataclass_fields__}
-    if cli.get("no_password") is None:
-        cli.pop("no_password")
-    if not cli.get("forward"):
-        cli["forward"] = None
+    cli["shares"] = ns.share
+    for f in _BOOL_FIELDS:
+        if cli.get(f) is None:
+            cli.pop(f, None)
+    for f in _LIST_FIELDS:
+        if not cli.get(f):
+            cli[f] = None
     # `vortax start --name X` with nothing else brings back how X was last launched.
     name = cli.get("name") or os.environ.get("VORTAX_NAME") or "vortax"
     saved = {}
-    if not (cli.get("system") or cli.get("source") or os.environ.get("VORTAX_SYSTEM") or os.environ.get("VORTAX_SOURCE")):
+    if not (cli.get("system") or cli.get("source") or preset or os.environ.get("VORTAX_SYSTEM") or os.environ.get("VORTAX_SOURCE")):
         try:
             saved = session.load_saved_settings(session.Instance(name))
         except VortaxError:
             saved = {}
-    config = {**settings.load_config_file(), **saved} if saved else None
+    config = {**settings.load_config_file(), **saved, **preset} if (saved or preset) else None
     return settings.resolve(cli, config=config)
 
 
@@ -213,6 +253,8 @@ def _print_info(inst: session.Instance, show_password: bool) -> None:
             print("  VNC password:  hidden (run `vortax password`)")
     else:
         print("  VNC password:  none (loopback only)")
+    if inst.ssh_port():
+        print(f"  SSH:           vortax ssh   (127.0.0.1:{inst.ssh_port()})")
     if st["deadline"]:
         print(f"  stops at:      {st['deadline']}")
     for key, label in (("rustdesk", "RustDesk"), ("anydesk", "AnyDesk")):
@@ -225,7 +267,7 @@ def cmd_start(ns) -> int:
     prep = _prepare_for(ns, s, resolved, inst)
     launch.launch(s, resolved, inst, prep, log=log)
     if s.runtime:
-        log("note: --runtime is only enforced by `vortax run`; `start` returns immediately")
+        log(f"a background watcher will stop the VM after {s.runtime} min")
     _print_info(inst, ns.show_password)
     return 0
 
@@ -233,7 +275,7 @@ def cmd_start(ns) -> int:
 def cmd_run(ns) -> int:
     s, resolved, inst = _build(ns)
     prep = _prepare_for(ns, s, resolved, inst)
-    launch.launch(s, resolved, inst, prep, log=log)
+    launch.launch(s, resolved, inst, prep, log=log, guard=bool(ns.detach))
     _print_info(inst, ns.show_password)
     if ns.detach:
         return 0
@@ -251,6 +293,9 @@ def cmd_run(ns) -> int:
         log("interrupted")
     if inst.running():
         inst.stop(graceful=True, timeout=ns.grace, log=log)
+    if s.notify:
+        from . import notify
+        notify.send(f"vortax: {inst.name} stopped", "")
     log("stopped")
     return 0
 
@@ -451,6 +496,181 @@ def cmd_secret(ns) -> int:
     return 0
 
 
+def cmd_logs(ns) -> int:
+    inst = _instance_arg(ns)
+    f = inst.log_file
+    if not f.exists():
+        raise VortaxError(f"no log for {inst.name} yet")
+    print(session.tail(f, ns.lines), flush=True)
+    if not ns.follow:
+        return 0
+    try:
+        with open(f, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            while True:
+                chunk = fh.read()
+                if chunk:
+                    sys.stdout.write(chunk.decode("utf-8", "replace"))
+                    sys.stdout.flush()
+                elif ns.until_stop and not inst.running():
+                    break
+                else:
+                    time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def cmd_guard(ns) -> int:
+    """Hidden: stop a VM when its runtime deadline passes (spawned by `start --runtime`)."""
+    inst = _instance_arg(ns)
+    st = inst.state()
+    minutes = int(st.get("runtime") or 0)
+    if not minutes:
+        return 0
+    started = st.get("pid")
+    end = time.time() + (minutes * 60 if not ns.deadline_epoch else max(0, ns.deadline_epoch - time.time()))
+    while time.time() < end:
+        if not inst.running() or inst.state().get("pid") != started:
+            return 0
+        time.sleep(min(5, max(0.1, end - time.time())))
+    if inst.running() and inst.state().get("pid") == started:
+        inst.stop(graceful=True, timeout=30.0)
+        inst._notify("stopped", "runtime elapsed")
+    return 0
+
+
+def cmd_preset(ns) -> int:
+    if ns.action == "list":
+        data = presets.load()
+        if not data:
+            print("no presets yet; `vortax preset save NAME --system alpine --ram-mb 2048`")
+        for name, v in sorted(data.items()):
+            print(f"{name:16} {', '.join(f'{k}={v[k]}' for k in sorted(v))}")
+        return 0
+    if not ns.preset_name:
+        raise VortaxError(f"vortax preset {ns.action}: give a preset name")
+    if ns.action == "show":
+        print(json.dumps(presets.get(ns.preset_name), indent=2))
+    elif ns.action == "rm":
+        presets.remove(ns.preset_name)
+        print(f"removed preset {ns.preset_name}")
+    else:
+        ns.target = None
+        s = _settings_from(ns)
+        raw = {k: getattr(s, k) for k in settings.Settings.__dataclass_fields__
+               if getattr(ns, k, None) not in (None, [], False, "") or (k == "shares" and ns.share)}
+        raw["shares"] = ns.share or raw.get("shares")
+        saved = presets.save(ns.preset_name, {k: v for k, v in raw.items() if v})
+        print(f"saved preset {ns.preset_name}: {', '.join(sorted(saved))}")
+    return 0
+
+
+def cmd_disk(ns) -> int:
+    inst = _instance_arg(ns)
+    d = inst.existing_disk()
+    if not d:
+        raise VortaxError(f"{inst.name} has no disk yet; run `vortax prepare` first")
+    if ns.action == "info":
+        i = disk.info(d)
+        print(f"{d}\n  format: {i.get('format')}\n  virtual size: {disk.human(i.get('virtual-size', 0))}"
+              f"\n  on disk: {disk.human(disk.size_bytes(d))}")
+        return 0
+    if inst.running():
+        raise VortaxError(f"{inst.name} is running; stop it before changing its disk")
+    if ns.action == "resize":
+        if not ns.value:
+            raise VortaxError("give a size, e.g. `vortax disk resize +20G`")
+        disk.resize(d, ns.value)
+        print(f"resized {d.name} ({ns.value}); grow the partition inside the guest to use it")
+    elif ns.action == "compact":
+        if d.suffix != ".qcow2":
+            raise VortaxError("compact only works on qcow2 disks")
+        before, after = disk.compact(d)
+        print(f"{disk.human(before)} -> {disk.human(after)}")
+    return 0
+
+
+def _ssh_target(ns) -> tuple[session.Instance, int]:
+    inst = _instance_arg(ns)
+    if not inst.running():
+        raise VortaxError(f"{inst.name} is not running")
+    port = inst.ssh_port()
+    if not port:
+        raise VortaxError("this VM was started without --ssh; restart it with `vortax start --ssh`")
+    return inst, port
+
+
+def cmd_ssh(ns) -> int:
+    _inst, port = _ssh_target(ns)
+    exe = shutil.which("ssh")
+    if not exe:
+        raise VortaxError("ssh is not installed" + (f" ({envinfo.termux_install_command(['ssh'])})" if envinfo.is_termux() else ""))
+    argv = [exe, "-p", str(port), "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "UserKnownHostsFile=" + str(paths.data_dir() / "known_hosts"), f"{ns.user}@127.0.0.1", *ns.command]
+    if ns.dry_run:
+        print(" ".join(argv))
+        return 0
+    os.execv(exe, argv)
+    return 0
+
+
+def cmd_cp(ns) -> int:
+    """`vortax cp ./file vm:/tmp/` or `vortax cp vm:/etc/os-release .`"""
+    _inst, port = _ssh_target(ns)
+    exe = shutil.which("scp")
+    if not exe:
+        raise VortaxError("scp is not installed (install openssh)")
+
+    def conv(x: str) -> str:
+        return f"{ns.user}@127.0.0.1:{x[3:]}" if x.startswith("vm:") else x
+    if not (ns.src.startswith("vm:") or ns.dst.startswith("vm:")):
+        raise VortaxError("one side must start with vm: (the guest), e.g. vm:/home/user/")
+    argv = [exe, "-r", "-P", str(port), "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "UserKnownHostsFile=" + str(paths.data_dir() / "known_hosts"), conv(ns.src), conv(ns.dst)]
+    if ns.dry_run:
+        print(" ".join(argv))
+        return 0
+    return subprocess_call(argv)
+
+
+def subprocess_call(argv: list[str]) -> int:
+    import subprocess
+    return subprocess.call(argv)
+
+
+def cmd_screenshot(ns) -> int:
+    inst = _instance_arg(ns)
+    out = Path(ns.out) if ns.out else Path.cwd() / f"{inst.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png"
+    print(inst.screenshot(out))
+    return 0
+
+
+def cmd_wizard(ns) -> int:
+    ask = lambda q, d="": (input(f"{q}{f' [{d}]' if d else ''}: ").strip() or d)
+    systems = [s for s in catalog.load_systems().values() if s.modes()]
+    print("Pick a system:")
+    for i, s in enumerate(systems, 1):
+        print(f"  {i:2}. {s.id:16} {s.name}")
+    pick = ask("number or id", "1")
+    try:
+        system = systems[int(pick) - 1].id if pick.isdigit() else catalog.find_system(pick).id
+    except (IndexError, VortaxError):
+        raise VortaxError(f"not a valid choice: {pick}") from None
+    name = ask("VM name", system)
+    ram = ask("RAM in MB (empty = automatic)")
+    tunnel = ask(f"tunnel ({'/'.join(settings.TUNNELS)})", "none")
+    save = ask("save these choices as a preset? name or empty")
+    args = ["--system", system, "--name", name, "--tunnel", tunnel] + (["--ram-mb", ram] if ram else [])
+    if save:
+        pns = build_parser().parse_args(["preset", "save", save, *args])
+        pns.fn(pns)
+    if ask("start now? (y/n)", "y").lower().startswith("y"):
+        sns = build_parser().parse_args(["start", *args])
+        return sns.fn(sns)
+    return 0
+
+
 def cmd_dashboard(ns) -> int:
     from .dashboard import server
     return server.serve(ns.host, ns.port, open_browser=ns.open)
@@ -537,6 +757,42 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("program", nargs="?")
     sp.add_argument("--dry-run", action="store_true")
     sp.add_argument("--allow-unverified", action="store_true", help="install a package that has no pinned checksum")
+
+
+    sp = named(add("logs", cmd_logs, "show the QEMU log (-f to follow)"))
+    sp.add_argument("-n", "--lines", type=int, default=50)
+    sp.add_argument("-f", "--follow", action="store_true")
+    sp.add_argument("--until-stop", action="store_true", help=argparse.SUPPRESS)
+
+    sp = add("_guard", cmd_guard, "internal: stop a VM when its runtime ends")
+    sub._choices_actions = [a for a in sub._choices_actions if a.dest != "_guard"]
+    sp.add_argument("--name")
+    sp.add_argument("--deadline-epoch", type=float, default=0.0)
+
+    sp = add("preset", cmd_preset, "save, list, show or remove named run presets")
+    sp.add_argument("action", choices=["save", "list", "show", "rm"])
+    sp.add_argument("preset_name", nargs="?")
+    _add_run_options(sp)
+
+    sp = named(add("disk", cmd_disk, "inspect, resize or compact a VM disk"))
+    sp.add_argument("action", choices=["info", "resize", "compact"])
+    sp.add_argument("value", nargs="?", help="resize: new size such as +20G")
+
+    sp = named(add("ssh", cmd_ssh, "ssh into a VM started with --ssh"))
+    sp.add_argument("-u", "--user", default="root")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.add_argument("command", nargs="*")
+
+    sp = named(add("cp", cmd_cp, "copy files to/from a VM started with --ssh (use vm:PATH)"))
+    sp.add_argument("src")
+    sp.add_argument("dst")
+    sp.add_argument("-u", "--user", default="root")
+    sp.add_argument("--dry-run", action="store_true")
+
+    sp = named(add("screenshot", cmd_screenshot, "save the guest screen as a PNG"))
+    sp.add_argument("--out")
+
+    add("wizard", cmd_wizard, "answer a few questions and start a VM")
 
     sp = add("doctor", cmd_doctor, "check the installation")
     sp.add_argument("--json", action="store_true")

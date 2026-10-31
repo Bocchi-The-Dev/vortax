@@ -197,6 +197,28 @@ def load_config_file() -> dict[str, Any]:
     return data
 
 
+EDITABLE = ("ram_mb", "vcpus", "disk_gb", "tunnel", "accel", "firmware", "nic", "audio", "access", "runtime",
+            "ssh", "snapshot_on_stop", "notify")
+
+
+def save_config_file(updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge `updates` into config.json after validating the result. None/'' resets a key to its default."""
+    bad = [k for k in updates if k not in EDITABLE]
+    if bad:
+        raise VortaxError(f"these settings cannot be edited here: {', '.join(bad)}")
+    config = load_config_file()
+    for k, v in updates.items():
+        if v is None or v == "":
+            config.pop(k, None)
+        else:
+            config[k] = v
+    resolve(environ={}, config=config)                    # raises VortaxError if anything is invalid
+    path = paths.config_dir() / "config.json"
+    paths.config_dir().mkdir(parents=True, exist_ok=True)
+    paths.write_private(path, json.dumps(config, indent=2))
+    return config
+
+
 def resolve(cli: dict[str, Any] | None = None, environ: dict[str, str] | None = None,
             config: dict[str, Any] | None = None) -> Settings:
     """Merge defaults < config file < environment < command line."""

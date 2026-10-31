@@ -36,8 +36,19 @@ def setup_access(s: Settings, inst: session.Instance, log: Log) -> None:
     log(f"{s.access} unattended access configured (password: `vortax password --access`)")
 
 
+def spawn_guard(inst: session.Instance) -> None:
+    """Detached watcher that stops the VM when its --runtime deadline passes."""
+    import subprocess
+    import sys
+    subprocess.Popen([sys.executable, "-m", "vortax", "_guard", "--name", inst.name], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
 def launch(s: Settings, resolved: catalog.Resolved, inst: session.Instance, prepared: session.Prepared,
-           log: Log = print) -> dict:
+           log: Log = print, guard: bool = True) -> dict:
+    from . import envinfo
+    if envinfo.is_termux() and envinfo.wake_lock(True):
+        log("Termux wake lock acquired so Android keeps the VM alive")
     state, _argv = session.start(s, resolved, inst, prepared, log=log)
     session.save_settings(inst, s)
     log(f"started {inst.name} (pid {state['pid']}, accel {state['accel']})")
@@ -53,4 +64,7 @@ def launch(s: Settings, resolved: catalog.Resolved, inst: session.Instance, prep
     if s.access in ("rdp", "nomachine"):
         log(f"wrote {access.write_launcher(state['vnc']['port'])}")
     setup_access(s, inst, log)
+    if s.runtime and guard:
+        spawn_guard(inst)
+    inst._notify("started", inst.state().get("tunnel", {}).get("address", ""))
     return inst.state()

@@ -10,7 +10,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 
-from . import paths, qemu
+from . import envinfo, paths, qemu
 
 
 @dataclass
@@ -65,6 +65,11 @@ def run_checks() -> list[Check]:
                        ("rclone", "apt install rclone (optional export upload)")):
         checks.append(_tool(tool, False, hint))
 
+    if envinfo.is_termux():
+        miss = [c.name for c in checks if not c.ok and c.name in envinfo.termux_packages()]
+        cmd = envinfo.termux_install_command(miss)
+        checks.append(Check("Termux", True, False, "detected: RAM default capped at 2 GB, no KVM" + (f"; missing tools -> {cmd}" if cmd else "")))
+        checks.append(_tool("termux-wake-lock", False, "pkg install termux-api (keeps Android from killing the VM)"))
     data = paths.data_dir()
     probe = data if data.exists() else data.parent
     while not probe.exists() and probe != probe.parent:

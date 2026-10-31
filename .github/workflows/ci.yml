@@ -61,7 +61,19 @@ jobs:
       - name: Dashboard script parses
         run: node --check src/vortax/dashboard/static/app.js
       - name: Shell scripts
-        run: shellcheck --severity=warning packaging/build-deb.sh packaging/check-license.sh debian/postinst debian/prerm
+        run: shellcheck --severity=warning packaging/build-deb.sh packaging/check-license.sh packaging/make-apt-repo.sh debian/postinst debian/prerm
+
+  browser:
+    name: dashboard console in headless Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright cryptography && playwright install --with-deps chromium
+      - run: PYTHONPATH=src python -m unittest tests.test_browser tests.test_console -v
 
   deb:
     name: .deb on ${{ matrix.os }}
@@ -127,6 +139,17 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/overview)" = 401
           curl -fs -H "X-Vortax-Token: ${token}" http://127.0.0.1:8765/api/overview | python3 -m json.tool > /dev/null
           kill "$dash_pid"
+
+      - name: Signed apt repository builds and verifies (throwaway key)
+        run: |
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          gpg --batch --passphrase '' --quick-gen-key "Vortax CI <ci@example.invalid>" ed25519 sign never
+          export GPG_KEY_ID="$(gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          packaging/make-apt-repo.sh dist /tmp/apt
+          gpg --verify /tmp/apt/dists/stable/InRelease
+          gpg --verify /tmp/apt/dists/stable/Release.gpg /tmp/apt/dists/stable/Release
+          grep -q "Filename: pool/main/v/vortax/" /tmp/apt/dists/stable/main/binary-all/Packages
 
       - name: Uninstall leaves nothing behind
         run: |

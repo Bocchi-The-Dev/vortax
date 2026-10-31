@@ -32,7 +32,7 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .. import __version__, catalog, disk, doctor, extract, launch, paths, session, settings, tunnels
+from .. import __license__, __source_url__, __version__, catalog, presets, disk, doctor, extract, launch, paths, session, settings, tunnels
 from ..errors import VortaxError
 from .stats import Sampler
 
@@ -142,13 +142,18 @@ def _clean_run_body(body: dict) -> dict:
 
 def _job_run(body: dict):
     cli = _clean_run_body(body)
+    preset = presets.get(str(body["preset"])) if body.get("preset") else {}
+    save_as = str(body.get("save_preset") or "")
 
     def fn(job: Job):
         name = cli.get("name", "vortax")
         saved = {}
-        if not (cli.get("system") or cli.get("source")):
+        if not (cli.get("system") or cli.get("source") or preset):
             saved = session.load_saved_settings(session.Instance(name))
-        s = settings.resolve(cli, config={**settings.load_config_file(), **saved} if saved else None)
+        layered = {**settings.load_config_file(), **saved, **preset}
+        s = settings.resolve(cli, config=layered if (saved or preset) else None)
+        if save_as:
+            presets.save(save_as, {k: v for k, v in cli.items() if k != "name"})
         resolved = catalog.resolve(s)
         inst = session.Instance(s.name)
         job.log(f"preparing {inst.name}")
@@ -309,6 +314,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(403, "bad Host header")
             parsed = urlparse(self.path)
             path, query = parsed.path, parse_qs(parsed.query)
+            if path == "/ws/vnc":
+                return self._console(query)
             if method == "GET" and not path.startswith("/api/"):
                 return self._static(path)
             if not self._authed():
@@ -330,6 +337,38 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:           # never leak a traceback to the client
             sys.stderr.write(f"dashboard: unhandled {exc!r}\n")
             return self._error(500, "internal error")
+
+    def _console(self, query: dict) -> None:
+        """WebSocket -> VNC. The token rides in the subprotocol header since browsers cannot set headers."""
+        from . import ws
+        protos = [p.strip() for p in (self.headers.get("Sec-WebSocket-Protocol") or "").split(",")]
+        token = next((p[4:] for p in protos if p.startswith("tok.")), "")
+        if not token or not hmac.compare_digest(token.encode(), self.state.token.encode()):
+            return self._error(401, "missing or wrong token")
+        origin = self.headers.get("Origin") or ""
+        if origin and urlparse(origin).netloc != (self.headers.get("Host") or ""):
+            return self._error(403, "cross-origin WebSocket refused")
+        key = self.headers.get("Sec-WebSocket-Key")
+        if "websocket" not in (self.headers.get("Upgrade") or "").lower() or not key:
+            return self._error(400, "expected a WebSocket upgrade")
+        inst = session.Instance((query.get("name") or ["vortax"])[0])
+        st = inst.state()
+        if not inst.running() or not st.get("vnc"):
+            return self._error(409, f"{inst.name} is not running")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", ws.accept_key(key))
+        self.send_header("Sec-WebSocket-Protocol", "vortax.v1")
+        self.end_headers()
+        self.close_connection = True
+        conn = ws.WebSocket(self.connection)
+        try:
+            ws.serve_console(conn, int(st["vnc"]["port"]), inst.vnc_password())
+        except (VortaxError, OSError, ws.WSClosed):
+            pass
+        finally:
+            conn.close()
 
     def _static(self, path: str) -> None:
         name = "index.html" if path in ("/", "/index.html") else path.lstrip("/")
@@ -358,6 +397,35 @@ class Handler(BaseHTTPRequestHandler):
                              for k, v in catalog.load_profiles().items()},
                 "options": {"tunnels": settings.TUNNELS, "access": settings.ACCESS, "nics": settings.NICS,
                             "gpu_modes": settings.GPU_MODES}}
+
+    def api_about(self, body, q):
+        return {"version": __version__, "license": __license__, "source": __source_url__}
+
+    def api_settings(self, body, q):
+        cfg = settings.load_config_file()
+        eff = settings.resolve(environ={}, config=cfg)
+        return {"values": {k: getattr(eff, k) for k in settings.EDITABLE}, "custom": [k for k in cfg if k in settings.EDITABLE],
+                "options": {"tunnel": list(settings.TUNNELS), "accel": list(settings.ACCEL), "firmware": list(settings.FIRMWARE),
+                            "nic": list(settings.NICS), "audio": list(settings.AUDIO), "access": list(settings.ACCESS)}}
+
+    def api_settings_save(self, body, q):
+        settings.save_config_file({k: v for k, v in body.items() if k in settings.EDITABLE or k in body})
+        return self.api_settings({}, {})
+    api_settings_save.post = True
+
+    def api_presets(self, body, q):
+        return {"presets": presets.load()}
+
+    def api_presets_save(self, body, q):
+        name = str(body.get("name") or "")
+        values = {k: v for k, v in (body.get("values") or {}).items() if k in RUN_KEYS}
+        return {"saved": presets.save(name, values)}
+    api_presets_save.post = True
+
+    def api_presets_delete(self, body, q):
+        presets.remove(str(body.get("name") or ""))
+        return {"ok": True}
+    api_presets_delete.post = True
 
     def api_job(self, body, q):
         job = self.state.jobs.get(q.get("id", ""))

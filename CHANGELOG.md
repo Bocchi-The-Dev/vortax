@@ -1,9 +1,23 @@
 # Changelog
 
-## Unreleased
+## 3.1.0b1
 
 ### Changed
-- Relicensed from MIT to **GNU AGPL v3 only**. Added `vortax --license`, SPDX headers and a CI license check.
+- Relicensed from MIT to **GNU AGPL v3 only**. `vortax --license`, SPDX headers, a CI license check, the dashboard
+  footer and `/api/about` point at the source, as section 13 requires for network use.
+
+### Added
+- **Console**: the VM screen in the dashboard (WebSocket to VNC proxy, pure-Python VNC authentication done on the
+  server, canvas RFB client with mouse, keyboard, touch and on-screen modifier keys).
+- **Dashboard settings** (defaults, presets), dark/light theme, Arabic with RTL layout, browser notifications.
+- CLI: `wizard`, `preset`, `logs [-f]`, `screenshot`, `disk info|resize|compact`, `ssh`, `cp`; a positional target
+  (preset, catalog id or file) on plan/prepare/start/run.
+- Run options: `--share` (9p), `--usb`, `--audio`, `--ssh`, `--snapshot-on-stop`, `--notify`.
+- `--runtime` now also works with `start` and the dashboard (a detached watcher stops the VM).
+- Termux: capped RAM default, `pkg install` hints in `doctor`, wake lock, `termux-notification`.
+- Download progress for the built-in downloader.
+- Catalog: alpine, ubuntu-server, arch, tumbleweed via `latest:` sources that resolve the current ISO.
+- Release workflow (tag `v*`), signed apt repository builder (`packaging/make-apt-repo.sh`, `docs/APT.md`).
 
 ## 3.0.0b1
 

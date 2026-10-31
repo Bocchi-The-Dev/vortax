@@ -9,9 +9,57 @@ const ICONS = {
   disk: "M4 7c0-2 16-2 16 0v10c0 2-16 2-16 0zM4 12c0 2 16 2 16 0",
   logs: "M5 4h14v16H5zM9 9h6M9 13h6M9 17h3",
   health: "M3 12h4l3-8 4 16 3-8h4",
+  console: "M3 5h18v12H3zM8 21h8M12 17v4M7 10l3 2-3 2M12 14h4",
+  settings: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2",
 };
-const TABS = [["overview", "Overview", "home"], ["launch", "Systems", "launch"], ["access", "Access", "access"],
-              ["storage", "Storage", "disk"], ["logs", "Logs", "logs"], ["health", "Health", "health"]];
+const TABS = [["overview", "Overview", "home"], ["launch", "Systems", "launch"], ["console", "Console", "console"], ["access", "Access", "access"],
+              ["storage", "Storage", "disk"], ["logs", "Logs", "logs"], ["settings", "Settings", "settings"], ["health", "Health", "health"]];
+
+/* ---------- preferences: theme, language, notifications (per browser, optional) ---------- */
+const store = {
+  get(k, d) { try { return localStorage.getItem("vortax-" + k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("vortax-" + k, v); } catch (e) { /* private mode */ } },
+};
+const AR = {
+  "Overview": "نظرة عامة", "Systems": "الأنظمة", "Console": "الشاشة", "Access": "الوصول", "Storage": "التخزين", "Logs": "السجلات",
+  "Settings": "الإعدادات", "Health": "الفحص", "Stop": "إيقاف", "Reboot": "إعادة تشغيل", "Kill": "إنهاء فوري", "Connect": "اتصال",
+  "Start": "تشغيل", "Boot from disk": "التشغيل من القرص", "Cancel": "إلغاء", "Yes": "نعم", "Close": "إغلاق", "Delete": "حذف", "Save": "حفظ",
+  "Load": "استرجاع", "Show": "إظهار", "Refresh": "تحديث", "running": "يعمل", "stopped": "متوقف", "Are you sure?": "هل أنت متأكد؟",
+  "No virtual machines yet.": "لا توجد أجهزة افتراضية بعد.", "Pick a system": "اختر نظامًا", "Nothing matches.": "لا شيء مطابق.",
+  "VM name": "اسم الجهاز", "Boot mode": "وضع الإقلاع", "Hardware profile": "ملف العتاد", "Firmware": "البرنامج الثابت", "vCPUs": "عدد المعالجات",
+  "Tunnel": "النفق", "Working...": "جارٍ العمل...", "Done": "تم", "Failed": "فشل", "Theme": "المظهر", "Language": "اللغة",
+  "Notifications": "الإشعارات", "Dark": "داكن", "Light": "فاتح", "Save settings": "حفظ الإعدادات", "Reset to default": "إعادة الافتراضي",
+  "Connect to a running VM": "اتصل بجهاز يعمل", "Ctrl+Alt+Del": "Ctrl+Alt+Del", "Keyboard": "لوحة المفاتيح", "Screenshot": "لقطة شاشة",
+  "Disconnect": "قطع الاتصال", "Type text": "اكتب نصًا", "Fullscreen": "ملء الشاشة", "Search": "بحث", "search": "بحث",
+  "Start a VM to see how to connect to it.": "شغّل جهازًا لترى طريقة الاتصال به.", "Nothing stored yet.": "لا شيء مخزّن بعد.",
+  "Source code (AGPL-3.0)": "الشيفرة المصدرية (AGPL-3.0)", "Presets": "القوالب", "Save as preset": "حفظ كقالب", "Run": "تشغيل",
+  "Default settings for new VMs": "الإعدادات الافتراضية للأجهزة الجديدة", "RAM (MB, 0 = auto)": "الذاكرة (ميغابايت، 0 = تلقائي)",
+  "Runtime (min, 0 = none)": "مدة التشغيل (دقيقة، 0 = بلا حد)", "Enable": "تفعيل", "Not supported by this browser": "غير مدعوم في هذا المتصفح",
+  "Blocked in browser settings": "محظور من إعدادات المتصفح", "Saved": "تم الحفظ", "Source URL or path": "رابط المصدر أو المسار",
+  "VNC password:": "كلمة مرور VNC:", "New random": "عشوائية جديدة", "Set...": "تعيين...", "Snapshots": "اللقطات", "Reset": "إعادة ضبط",
+  "This browser": "هذا المتصفح", "total": "المجموع", "ram mb": "الذاكرة (ميغابايت)", "vcpus": "المعالجات", "disk gb": "القرص (غيغابايت)",
+  "tunnel": "النفق", "accel": "التسريع", "firmware": "البرنامج الثابت", "nic": "بطاقة الشبكة", "audio": "الصوت", "access": "الوصول",
+  "runtime": "مدة التشغيل (دقيقة)", "ssh": "SSH", "snapshot on stop": "حفظ الحالة عند الإيقاف", "notify": "الإشعارات", "Sound": "الصوت",
+  "SSH forward": "تحويل SSH", "Resume where you left off": "المتابعة من حيث توقفت", "Notify on start/stop": "إشعار عند التشغيل/الإيقاف",
+  "Save as preset (optional)": "حفظ كقالب (اختياري)", "Nothing changed": "لم يتغير شيء", "Logs": "السجلات", "Log": "السجل",
+  "Your own image": "صورتك الخاصة", "Run a custom source": "تشغيل مصدر مخصص", "Open in browser (noVNC)": "فتح في المتصفح (noVNC)",
+};
+const lang = () => store.get("lang", "en");
+const T = (s) => (lang() === "ar" && AR[s]) || s;
+function applyPrefs() {
+  const theme = store.get("theme", "dark"), root = document.documentElement;
+  root.setAttribute("data-theme", theme === "light" ? "light" : "dark");
+  root.lang = lang(); root.dir = lang() === "ar" ? "rtl" : "ltr";
+}
+function translateTree(root) {
+  if (lang() !== "ar") return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) { const t = n.nodeValue.trim(); if (t && AR[t]) n.nodeValue = n.nodeValue.replace(t, AR[t]); }
+  root.querySelectorAll("[placeholder],[aria-label]").forEach((el) => { for (const a of ["placeholder", "aria-label"]) { const v = el.getAttribute(a); if (v && AR[v]) el.setAttribute(a, AR[v]); } });
+}
+function notifyOk() { return store.get("notify", "0") === "1" && "Notification" in window && Notification.permission === "granted"; }
+function notifyUser(title, body) { if (notifyOk()) { try { new Notification(title, { body, icon: "icon.svg" }); } catch (e) { /* some mobile browsers need a service worker */ } } }
+let lastRunning = null;
 
 let token = "", view = "overview", data = null, catalog = null, timer = null, logName = "", logSource = "qemu";
 let family = "all", search = "";
@@ -55,7 +103,7 @@ function toast(msg, err) { const t = $("#toast"); t.textContent = msg; t.classNa
 async function act(fn, okMsg) { try { const r = await fn(); if (okMsg) toast(okMsg); return r; } catch (e) { if (e.message !== "auth") toast(e.message, true); } }
 
 /* ---------- modal ---------- */
-function openModal(...kids) { const s = $("#sheet"); s.replaceChildren(...kids); $("#modal").hidden = false; }
+function openModal(...kids) { const s = $("#sheet"); s.replaceChildren(...kids); $("#modal").hidden = false; translateTree(s); }
 function closeModal() { $("#modal").hidden = true; $("#sheet").replaceChildren(); }
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
@@ -200,7 +248,12 @@ function launchForm(sys) {
     field("RAM (MB, 0 = auto)", h("input", { id: "f_ram", type: "number", min: "0", value: "0" })),
     field("vCPUs", h("input", { id: "f_cpu", type: "number", min: "1", value: "2" })),
     field("Tunnel", select("f_tunnel", catalog.options.tunnels, "none")),
-    field("Runtime (min, 0 = none)", h("input", { id: "f_rt", type: "number", min: "0", value: "0" })));
+    field("Runtime (min, 0 = none)", h("input", { id: "f_rt", type: "number", min: "0", value: "0" })),
+    field("Sound", select("f_audio", ["none", "hda", "ac97", "sb16"], "none")),
+    field("SSH forward", select("f_ssh", ["off", "on"], "off")),
+    field("Resume where you left off", select("f_snap", ["off", "on"], "off")),
+    field("Notify on start/stop", select("f_notify", ["off", "on"], "off")),
+    field("Save as preset (optional)", h("input", { id: "f_preset", placeholder: "my-setup", maxlength: "40" })));
   openModal(h("h3", { text: sys ? sys.name : "Custom source" }),
     h("p", { class: "sub", text: sys && sys.notes ? sys.notes : "Downloads, prepares and starts the VM." }), f,
     h("p", { class: "note", text: "VNC listens on this machine only and gets a random password. Use the Access tab to see it." }),
@@ -212,6 +265,11 @@ async function submitLaunch(sys) {
   const body = { name: v("f_name"), firmware: v("f_fw"), ram_mb: Number(v("f_ram")), vcpus: Number(v("f_cpu")), tunnel: v("f_tunnel"), runtime: Number(v("f_rt")) };
   if (sys) { body.system = sys.id; if (v("f_mode")) body.boot_mode = v("f_mode"); } else body.source = v("f_source");
   if (v("f_profile")) body.profile = v("f_profile");
+  if (v("f_audio") && v("f_audio") !== "none") body.audio = v("f_audio");
+  if (v("f_ssh") === "on") body.ssh = true;
+  if (v("f_snap") === "on") body.snapshot_on_stop = true;
+  if (v("f_notify") === "on") body.notify = true;
+  if (v("f_preset")) body.save_preset = v("f_preset");
   const r = await act(() => api("run", body));
   if (r) trackJob(r.job);
 }
@@ -291,6 +349,116 @@ async function renderLogs() {
   load(); return root;
 }
 
+
+/* --- console (VNC in the browser, through the dashboard's own WebSocket proxy) --- */
+let rfb = null, consoleName = "";
+function stopConsole() { if (rfb) { rfb.close(); rfb = null; } }
+const MODS = { ctrl: 0xffe3, alt: 0xffe9, meta: 0xffeb };
+function renderConsole() {
+  const running = data.instances.filter((v) => v.running), root = h("div");
+  if (!running.length) { stopConsole(); return h("div", { class: "card empty", text: "Start a VM to see how to connect to it." }); }
+  if (!running.some((v) => v.name === consoleName)) consoleName = running[0].name;
+  const status = h("span", { class: "sub", text: "" }), canvas = h("canvas", { id: "screen", tabindex: "0" });
+  const typer = h("input", { id: "typer", class: "typer", autocapitalize: "off", autocomplete: "off", autocorrect: "off", spellcheck: "false", "aria-label": "Type text" });
+  const sel = select("f_con", running.map((v) => v.name), consoleName);
+  const sticky = new Set();
+  const modBtn = (label, sym) => h("button", { class: "btn sm", "aria-pressed": "false", text: label, onclick: (e) => {
+    const on = !sticky.has(sym); on ? sticky.add(sym) : sticky.delete(sym); if (rfb) rfb.key(sym, on); e.target.setAttribute("aria-pressed", String(on)); } });
+  const releaseMods = () => { if (!rfb) return; for (const s of sticky) rfb.key(s, false); sticky.clear(); root.querySelectorAll("[aria-pressed]").forEach((b) => b.setAttribute("aria-pressed", "false")); };
+  const connect = () => {
+    stopConsole(); status.textContent = "connecting...";
+    rfb = new RFB(canvas, `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/vnc?name=${encodeURIComponent(sel.value)}`, ["vortax.v1", "tok." + token], {
+      onready: (name, w, hh) => { status.textContent = `${name || sel.value} · ${w}×${hh}`; canvas.focus(); },
+      onclose: () => { status.textContent = "disconnected"; }, onerror: () => { status.textContent = "connection failed"; } });
+  };
+  sel.addEventListener("change", () => { consoleName = sel.value; connect(); });
+  const pos = (ev) => { const r = canvas.getBoundingClientRect(); return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height]; };
+  const mask = (ev) => (ev.buttons & 1 ? 1 : 0) | (ev.buttons & 4 ? 2 : 0) | (ev.buttons & 2 ? 4 : 0);
+  canvas.addEventListener("pointermove", (ev) => { if (rfb && ev.pointerType === "mouse") rfb.pointer(...pos(ev), mask(ev)); });
+  canvas.addEventListener("pointerdown", (ev) => { canvas.focus(); if (!rfb) return; canvas.setPointerCapture(ev.pointerId); const p = pos(ev); rfb.pointer(...p, ev.pointerType === "mouse" ? mask(ev) : 1); ev.preventDefault(); });
+  canvas.addEventListener("pointerup", (ev) => { if (!rfb) return; rfb.pointer(...pos(ev), 0); releaseMods(); });
+  canvas.addEventListener("pointercancel", () => { if (rfb) rfb.pointer(0, 0, 0); });
+  canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  canvas.addEventListener("wheel", (ev) => { if (!rfb) return; const [x, y] = pos(ev), b = ev.deltaY < 0 ? 8 : 16; rfb.pointer(x, y, b); rfb.pointer(x, y, 0); ev.preventDefault(); }, { passive: false });
+  // long-press on touch = right click
+  let press = null;
+  canvas.addEventListener("touchstart", (ev) => { if (ev.touches.length === 1 && rfb) { const t = ev.touches[0]; press = setTimeout(() => { const p = pos(t); rfb.pointer(...p, 4); rfb.pointer(...p, 0); press = null; }, 600); } });
+  for (const n of ["touchend", "touchmove", "touchcancel"]) canvas.addEventListener(n, () => { if (press) { clearTimeout(press); press = null; } });
+  const keyEvent = (down) => (ev) => {
+    if (!rfb || ev.target === typer) return;
+    const sym = RFB.keysymFor(ev.key); if (!sym) return;
+    rfb.key(sym, down); ev.preventDefault();
+  };
+  canvas.addEventListener("keydown", keyEvent(true)); canvas.addEventListener("keyup", keyEvent(false));
+  typer.addEventListener("beforeinput", (ev) => {
+    if (!rfb) return;
+    if (ev.inputType === "deleteContentBackward") { rfb.tap(0xff08); ev.preventDefault(); }
+    else if (ev.inputType === "insertLineBreak" || ev.inputType === "insertParagraph") { rfb.tap(0xff0d); ev.preventDefault(); }
+    else if (ev.data) { rfb.type(ev.data); ev.preventDefault(); }
+  });
+  const toolbar = h("div", { class: "row toolbar" }, sel, status,
+    h("button", { class: "btn sm", text: "Keyboard", onclick: () => typer.focus() }),
+    modBtn("Ctrl", MODS.ctrl), modBtn("Alt", MODS.alt), modBtn("Win", MODS.meta),
+    h("button", { class: "btn sm", text: "Esc", onclick: () => rfb && rfb.tap(0xff1b) }),
+    h("button", { class: "btn sm", text: "Tab", onclick: () => rfb && rfb.tap(0xff09) }),
+    h("button", { class: "btn sm", text: "Ctrl+Alt+Del", onclick: () => rfb && rfb.combo([0xffe3, 0xffe9, 0xffff]) }),
+    h("button", { class: "btn sm", text: "Type text", onclick: () => pasteForm((t) => rfb && rfb.type(t)) }),
+    h("button", { class: "btn sm", text: "Screenshot", onclick: () => canvas.toBlob((b) => { const a = h("a", { href: URL.createObjectURL(b), download: `${sel.value}.png` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }) }),
+    h("button", { class: "btn sm", text: "Fullscreen", onclick: () => canvas.requestFullscreen && canvas.requestFullscreen() }),
+    h("button", { class: "btn sm bad", text: "Disconnect", onclick: () => { stopConsole(); status.textContent = "disconnected"; } }));
+  root.append(h("div", { class: "card console" }, toolbar, h("div", { class: "screenwrap" }, canvas), typer));
+  setTimeout(connect, 0);
+  return root;
+}
+function pasteForm(send) {
+  const ta = h("textarea", { id: "f_paste", rows: "5", spellcheck: "false" });
+  openModal(h("h3", { text: "Type text" }), h("p", { class: "sub", text: "Sent to the guest as key presses, one character at a time." }), ta,
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Send", onclick: () => { send(ta.value); closeModal(); } }), h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+}
+
+/* --- settings --- */
+async function renderSettings() {
+  const cfg = await api("settings"), presets = (await api("presets")).presets, root = h("div");
+  const inputs = {};
+  const form = h("div", { class: "form" });
+  for (const [key, val] of Object.entries(cfg.values)) {
+    const opts = cfg.options[key];
+    const el = opts ? select("s_" + key, opts, String(val)) : (typeof val === "boolean" ? select("s_" + key, ["false", "true"], String(val)) : h("input", { id: "s_" + key, type: typeof val === "number" ? "number" : "text", value: String(val) }));
+    inputs[key] = el; form.append(field(key.replace(/_/g, " "), el));
+  }
+  const save = async () => {
+    const out = {};
+    for (const [k, el] of Object.entries(inputs)) {
+      const orig = cfg.values[k]; let v = el.value;
+      if (typeof orig === "number") v = Number(v); else if (typeof orig === "boolean") v = v === "true";
+      if (v !== orig) out[k] = v;
+    }
+    if (!Object.keys(out).length) return toast("Nothing changed");
+    if (await act(() => api("settings/save", out), T("Saved"))) render();
+  };
+  root.append(h("div", { class: "card" }, h("h2", { text: "Default settings for new VMs" }), form,
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save settings", onclick: save }),
+      h("button", { class: "btn", text: "Reset to default", onclick: () => confirmThen("Clear every saved default?", async () => { await act(() => api("settings/save", Object.fromEntries(cfg.custom.map((k) => [k, ""]))), "Saved"); render(); }) }))));
+  // this browser only
+  const themeSel = select("p_theme", ["dark", "light"], store.get("theme", "dark")), langSel = select("p_lang", ["en", "ar"], lang());
+  themeSel.addEventListener("change", () => { store.set("theme", themeSel.value); applyPrefs(); });
+  langSel.addEventListener("change", () => { store.set("lang", langSel.value); applyPrefs(); render(); });
+  const noteBtn = h("button", { class: "btn", text: "Enable", onclick: async () => {
+    if (!("Notification" in window)) return toast(T("Not supported by this browser"), true);
+    const p = await Notification.requestPermission();
+    if (p === "granted") { store.set("notify", "1"); toast(T("Saved")); } else toast(T("Blocked in browser settings"), true);
+  } });
+  root.append(h("div", { class: "card" }, h("h2", { text: "This browser" }), h("div", { class: "form" }, field("Theme", themeSel), field("Language", langSel), field("Notifications", noteBtn))));
+  const names = Object.keys(presets);
+  const pc = h("div", { class: "card" }, h("h2", { text: "Presets" }));
+  if (!names.length) pc.append(h("p", { class: "sub", text: "Save one from the launch form (\"Save as preset\") or with `vortax preset save`." }));
+  for (const n of names) pc.append(h("div", { class: "row" }, h("b", { text: n }), h("span", { class: "sub", text: Object.entries(presets[n]).map(([k, v]) => `${k}=${v}`).join(", ") }),
+    h("button", { class: "btn sm primary", text: "Run", onclick: async () => { const r = await act(() => api("run", { preset: n, name: n })); if (r) trackJob(r.job); } }),
+    h("button", { class: "btn sm bad", text: "Delete", onclick: () => confirmThen(`Delete preset ${n}?`, async () => { await act(() => api("presets/delete", { name: n })); render(); }) })));
+  root.append(pc);
+  return root;
+}
+
 /* --- health --- */
 async function renderHealth() {
   const r = await api("doctor"), tb = h("tbody");
@@ -303,24 +471,30 @@ async function renderHealth() {
 function go(v) { view = v; render(); }
 function buildNav() {
   const nav = $("#tabs"); nav.replaceChildren();
-  for (const [id, label, ic] of TABS) nav.append(h("button", { class: "tab", "aria-current": id === view ? "page" : false, onclick: () => go(id) }, icon(ic), h("span", { text: label })));
+  for (const [id, label, ic] of TABS) nav.append(h("button", { class: "tab", "aria-current": id === view ? "page" : false, onclick: () => go(id) }, icon(ic), h("span", { text: T(label) })));
 }
 async function render() {
-  buildNav(); $("#title").textContent = TABS.find((t) => t[0] === view)[1];
+  if (view !== "console") stopConsole();
+  buildNav(); $("#title").textContent = T(TABS.find((t) => t[0] === view)[1]);
   const target = $("#view");
   try {
     if (!data) data = await api("overview");
-    if (!catalog && (view === "launch" || view === "access")) catalog = await api("systems");
-    const node = await ({ overview: renderOverview, launch: renderLaunch, access: renderAccess, storage: renderStorage, logs: renderLogs, health: renderHealth })[view]();
-    target.replaceChildren(node);
+    if (!catalog && (view === "launch" || view === "access" || view === "console")) catalog = await api("systems");
+    const node = await ({ overview: renderOverview, launch: renderLaunch, access: renderAccess, console: renderConsole, settings: renderSettings, storage: renderStorage, logs: renderLogs, health: renderHealth })[view]();
+    target.replaceChildren(node); translateTree(target);
   } catch (e) { if (e.message !== "auth") target.replaceChildren(h("div", { class: "card fail", text: e.message })); }
-  $("#subtitle").textContent = data ? `${data.instances.filter((v) => v.running).length} running · ${data.instances.length} total` : "";
+  $("#subtitle").textContent = data ? subtitle() : "";
 }
+const subtitle = () => `${data.instances.filter((v) => v.running).length} ${T("running")} · ${data.instances.length} ${T("total")}`;
 let lastSig = "";
 async function refresh() {
   try { data = await api("overview"); } catch (e) { return; }
   $("#clock").textContent = data.stats.time;
-  $("#subtitle").textContent = `${data.instances.filter((v) => v.running).length} running · ${data.instances.length} total`;
+  $("#subtitle").textContent = subtitle();
+  const now = new Set(data.instances.filter((v) => v.running).map((v) => v.name));
+  if (lastRunning) for (const n of lastRunning) if (!now.has(n)) notifyUser("Vortax", `${n} stopped`);
+  if (lastRunning) for (const n of now) if (!lastRunning.has(n)) notifyUser("Vortax", `${n} is running`);
+  lastRunning = now;
   if (!$("#modal").hidden) return;                       // never rebuild the page under an open dialog
   if (view === "overview") render();
   else if (view === "access") {                          // keep revealed passwords on screen unless something changed
@@ -329,13 +503,21 @@ async function refresh() {
   }
 }
 
+async function footer() {
+  try {
+    const a = await api("about"), link = h("a", { href: a.source, target: "_blank", rel: "noopener", text: "Source code (AGPL-3.0)" });
+    $("#foot").replaceChildren(link, document.createTextNode(` · vortax ${a.version}`)); translateTree($("#foot"));
+  } catch (e) { /* the banner already explains auth problems */ }
+}
 function boot() {
+  applyPrefs();
   const m = location.hash.match(/token=([A-Za-z0-9_-]+)/);
   try { if (m) sessionStorage.setItem("vortax-token", m[1]); token = sessionStorage.getItem("vortax-token") || ""; } catch (e) { token = m ? m[1] : ""; }
   if (m) history.replaceState(null, "", location.pathname);
   if (!token) { setBanner("No token. Open the URL that `vortax dashboard` printed (it ends with #token=...).", true); return; }
   $("#ver").textContent = "v3";
   render().then(() => { $("#ver").textContent = data ? "v" + data.version : ""; });
+  footer();
   timer = setInterval(() => { if (!document.hidden) refresh(); }, 2500);
 }
 boot();
