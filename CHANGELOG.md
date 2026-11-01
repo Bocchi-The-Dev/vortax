@@ -13,6 +13,7 @@
   Cirrus display, RTL8139 network, a USB tablet so the VNC pointer stays aligned. Meant for phones, where QEMU
   growing past Android's memory limit gets Termux killed.
 - Preset keys `tb_size_mb` and `vcpus_tcg`.
+- `status` and the dashboard now show the RAM and vCPU count QEMU really gets; a preset can override the requested values.
 - `vortax doctor` on Termux explains Android's "Process completed (signal 9)" and how to switch the limit off.
 
 ## 3.1.0b1

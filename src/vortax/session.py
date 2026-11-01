@@ -649,7 +649,7 @@ def start(settings: Settings, resolved: catalog.Resolved, inst: Instance, prepar
         "name": inst.name, "pid": proc.pid, "started": _now(),
         "system": resolved.system.id if resolved.system else "",
         "arch": resolved.arch, "accel": plan.accel, "disk_format": prepared.disk_format,
-        "ram_mb": plan.ram_mb or 0, "vcpus": plan.vcpus,
+        "ram_mb": qemu.effective_resources(plan)[0], "vcpus": qemu.effective_resources(plan)[1],
         "profile": resolved.profile_name, "firmware": plan.firmware,
         "vnc": {"bind": plan.vnc_bind, "display": display, "port": VNC_BASE_PORT + display,
                 "password": bool(password)},

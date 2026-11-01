@@ -265,6 +265,17 @@ def _firmware_args(plan: VMPlan) -> list[str]:
     )
 
 
+def effective_resources(plan: VMPlan) -> tuple[int, int]:
+    """(RAM in MB, vCPUs) that QEMU is really given. A hardware preset can override both, and the status
+    line should show what runs, not what was requested. RAM 0 means QEMU's own default."""
+    prof = plan.profile
+    if prof is None or plan.arch != "x86_64":
+        return plan.ram_mb or 0, plan.vcpus
+    use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
+    ram = prof["ram_mb"] if "ram_mb" in prof else plan.ram_mb
+    return ram or 0, (plan.vcpus if use_kvm else (prof.get("vcpus_tcg") or plan.vcpus))
+
+
 def build_command(plan: VMPlan) -> list[str]:
     """Return the full argv, binary first."""
     legacy = plan.profile is not None and plan.arch == "x86_64"

@@ -106,6 +106,20 @@ class Legacy(unittest.TestCase):
         self.assertEqual(flag(k, "-smp"), "4")                        # with KVM the user's vCPU count is kept
         self.assertEqual(flag(qemu.build_command(plan(profile=self.P["win98"], accel="tcg", vcpus=2)), "-smp"), "2")
 
+    def test_status_shows_what_really_runs(self):
+        from vortax import catalog
+        xp = catalog.load_profiles()["winxp"]
+        self.assertEqual(qemu.effective_resources(plan(profile=xp, accel="tcg", ram_mb=1880, vcpus=2)), (512, 1))
+        self.assertEqual(qemu.effective_resources(plan(profile=xp, accel="kvm", ram_mb=1880, vcpus=2)), (512, 2))
+        self.assertEqual(qemu.effective_resources(plan(ram_mb=1880, vcpus=2)), (1880, 2))      # no preset: unchanged
+        for accel in ("tcg", "kvm"):                      # the number shown matches the command that is built
+            for prof in (xp, self.P["win98"], None):
+                p = plan(profile=prof, accel=accel, ram_mb=1880, vcpus=3)
+                ram, cpus = qemu.effective_resources(p)
+                argv = qemu.build_command(p)
+                self.assertEqual(flag(argv, "-smp"), str(cpus))
+                self.assertEqual(flag(argv, "-m"), str(ram) if ram else None)
+
     def test_xp_audio_reaches_the_vnc_server_and_a_sound_card(self):
         from vortax import catalog
         a = qemu.build_command(plan(profile=catalog.load_profiles()["winxp"], accel="tcg", audio="sb16"))
