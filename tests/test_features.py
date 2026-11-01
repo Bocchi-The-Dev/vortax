@@ -40,6 +40,14 @@ class Builder(unittest.TestCase):
         self.assertIn("none,id=snd0", a)
         self.assertIn("hda-duplex,audiodev=snd0", a)
 
+    def test_audio_is_offered_to_the_vnc_console(self):
+        a = self.plan(audio="ac97")
+        self.assertLess(a.index("-audiodev"), a.index("-vnc"))          # defined before the VNC server uses it
+        self.assertEqual(a[a.index("-vnc") + 1], "127.0.0.1:0,password=on,audiodev=snd0")
+        self.assertEqual(a.count("-audiodev"), 1)
+        self.assertIn("AC97,audiodev=snd0", a)
+        self.assertNotIn("audiodev", self.plan()[self.plan().index("-vnc") + 1])
+
     def test_defaults_have_no_extras(self):
         a = self.plan()
         for bad in ("-virtfs", "usb-host", "-audiodev"):

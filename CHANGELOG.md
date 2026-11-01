@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Console sound**: with `--audio hda|ac97|sb16` the dashboard console has a **Sound** button. QEMU streams the guest's
+  audio over the same VNC connection (QEMU's audio extension, pseudo-encoding -259) and the browser plays it with a
+  small jitter buffer. Mono 16-bit at 22050 Hz, about 44 KB/s, so it stays light over a tunnel. Browsers only unlock
+  audio after a tap, which is why sound starts from the button.
+- `-vnc` now gets `audiodev=snd0` whenever a sound card is enabled.
+
 ## 3.1.0b1
 
 ### Changed

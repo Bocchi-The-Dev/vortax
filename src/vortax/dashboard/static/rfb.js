@@ -5,13 +5,13 @@
 class RFB {
   constructor(canvas, url, protocols, handlers) {
     this.canvas = canvas; this.ctx = canvas.getContext("2d"); this.h = handlers || {};
-    this.buf = new Uint8Array(0); this.state = "version"; this.pending = null; this.buttons = 0;
+    this.audio = null; this.audioOn = false; this.buf = new Uint8Array(0); this.state = "version"; this.pending = null; this.buttons = 0;
     this.ws = new WebSocket(url, protocols); this.ws.binaryType = "arraybuffer";
     this.ws.onmessage = (e) => { this._push(new Uint8Array(e.data)); };
     this.ws.onclose = () => { this.state = "closed"; if (this.h.onclose) this.h.onclose(); };
     this.ws.onerror = () => { if (this.h.onerror) this.h.onerror(); };
   }
-  close() { try { this.ws.close(); } catch (e) { /* already closed */ } }
+  close() { if (this.audio) { this.audio.stop(); this.audio = null; } try { this.ws.close(); } catch (e) { /* already closed */ } }
   _send(bytes) { if (this.ws.readyState === 1) this.ws.send(bytes); }
   _push(chunk) {
     const merged = new Uint8Array(this.buf.length + chunk.length);
@@ -46,7 +46,7 @@ class RFB {
         // 32 bpp, true colour, little endian, bytes arrive as R,G,B,pad which is exactly RGBA order.
         const pf = new Uint8Array(20); pf[0] = 0; pf.set([32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 0, 8, 16, 0, 0, 0], 4);
         this._send(pf);
-        const enc = [0, 1, -223], msg = new DataView(new ArrayBuffer(4 + 4 * enc.length));
+        const enc = [0, 1, -223, -259], msg = new DataView(new ArrayBuffer(4 + 4 * enc.length));
         msg.setUint8(0, 2); msg.setUint16(2, enc.length); enc.forEach((e, i) => msg.setInt32(4 + 4 * i, e));
         this._send(new Uint8Array(msg.buffer));
         this.state = "run"; this._request(false);
@@ -69,6 +69,7 @@ class RFB {
     if (type === 0) { if (b.length < 4) return false; const n = (b[2] << 8) | b[3]; this._take(4); this.pending = { left: n }; return true; }
     if (type === 1) { if (b.length < 6) return false; const n = (b[4] << 8) | b[5]; const need = 6 + n * 6; if (b.length < need) return false; this._take(need); return true; }
     if (type === 2) { this._take(1); return true; }
+    if (type === 255) return this._audioMsg();
     if (type === 3) { if (b.length < 8) return false; const n = new DataView(b.buffer, b.byteOffset).getUint32(4); if (b.length < 8 + n) return false; this._take(8 + n); return true; }
     throw new Error("unknown server message " + type);
   }
@@ -86,10 +87,38 @@ class RFB {
     } else if (enc === 1) {
       if (b.length < 16) return false;
       const sx = dv.getUint16(12), sy = dv.getUint16(14); this.ctx.drawImage(this.canvas, sx, sy, w, h, x, y, w, h); this._take(16);
+    } else if (enc === -259) {
+      this._take(12); this.audioReady = true; if (this.h.onaudio) this.h.onaudio(true);
     } else if (enc === -223) {
       this._take(12); this._resize(w, h); this._request(false);
     } else throw new Error("unsupported encoding " + enc);
     p.left--; return true;
+  }
+  /* QEMU audio: 255, 1, u16 op (0 end, 1 begin, 2 data + u32 length + PCM). Sent only after the server acked -259. */
+  _audioMsg() {
+    const b = this.buf; if (b.length < 4) return false;
+    if (b[1] !== 1) throw new Error("unknown QEMU message " + b[1]);
+    const op = (b[2] << 8) | b[3];
+    if (op === 0 || op === 1) { this._take(4); if (this.audio) this.audio.reset(); return true; }
+    if (op !== 2) throw new Error("unknown audio operation " + op);
+    if (b.length < 8) return false;
+    const n = new DataView(b.buffer, b.byteOffset).getUint32(4); if (b.length < 8 + n) return false;
+    const pcm = b.slice(8, 8 + n); this._take(8 + n); if (this.audio) this.audio.push(pcm); return true;
+  }
+  _audioSend(op, extra) {
+    const m = new Uint8Array(4 + (extra ? extra.length : 0)); m[0] = 255; m[1] = 1; m[2] = 0; m[3] = op; if (extra) m.set(extra, 4); this._send(m);
+  }
+  /* Call from a click: unlocks browser audio, sets format (S16, mono, 22050 Hz by default) and asks QEMU to stream. */
+  enableAudio(player) {
+    if (!this.audioReady || this.audioOn || this.state !== "run") return false;
+    if (!player.start()) return false;
+    this.audio = player; this.audioOn = true;
+    const f = new DataView(new ArrayBuffer(6)); f.setUint8(0, 3); f.setUint8(1, player.channels); f.setUint32(2, player.freq);
+    this._audioSend(2, new Uint8Array(f.buffer)); this._audioSend(0); return true;
+  }
+  disableAudio() {
+    if (!this.audioOn) return; this.audioOn = false; this._audioSend(1);
+    if (this.audio) { this.audio.stop(); this.audio = null; }
   }
   pointer(x, y, buttons) {
     if (this.state !== "run") return;

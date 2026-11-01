@@ -404,6 +404,12 @@ function renderConsole() {
     h("button", { class: "btn sm", text: "Ctrl+Alt+Del", onclick: () => rfb && rfb.combo([0xffe3, 0xffe9, 0xffff]) }),
     h("button", { class: "btn sm", text: "Type text", onclick: () => pasteForm((t) => rfb && rfb.type(t)) }),
     h("button", { class: "btn sm", text: "Screenshot", onclick: () => canvas.toBlob((b) => { const a = h("a", { href: URL.createObjectURL(b), download: `${sel.value}.png` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }) }),
+    h("button", { class: "btn sm", id: "snd", "aria-pressed": "false", text: "Sound", onclick: (e) => {
+      if (!rfb) return;
+      if (rfb.audioOn) { rfb.disableAudio(); e.target.setAttribute("aria-pressed", "false"); return; }
+      if (!rfb.audioReady) return toast("This VM has no sound: start it with --audio hda (or ac97, sb16)", true);
+      if (!rfb.enableAudio(new QemuAudio())) return toast("The browser blocked audio", true);
+      e.target.setAttribute("aria-pressed", "true"); } }),
     h("button", { class: "btn sm", text: "Fullscreen", onclick: () => canvas.requestFullscreen && canvas.requestFullscreen() }),
     h("button", { class: "btn sm bad", text: "Disconnect", onclick: () => { stopConsole(); status.textContent = "disconnected"; } }));
   root.append(h("div", { class: "card console" }, toolbar, h("div", { class: "screenwrap" }, canvas), typer));

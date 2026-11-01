@@ -147,7 +147,12 @@ def _common(plan: VMPlan) -> list[str]:
     vnc = f"{plan.vnc_bind}:{plan.vnc_display}"
     if plan.vnc_password:
         vnc += ",password=on"
-    args = ["-name", plan.name, "-smp", str(plan.vcpus), "-display", "none", "-vnc", vnc]
+    args = ["-name", plan.name, "-smp", str(plan.vcpus), "-display", "none"]
+    if plan.audio != "none":
+        # Defined ahead of -vnc so the VNC server can stream the guest's sound to the dashboard console.
+        args += ["-audiodev", "none,id=snd0"]
+        vnc += ",audiodev=snd0"
+    args += ["-vnc", vnc]
     if plan.monitor_sock:
         args += ["-monitor", f"unix:{plan.monitor_sock},server=on,wait=off"]
     if plan.serial_file:
@@ -239,7 +244,6 @@ def _extra_devices(plan: VMPlan) -> list[str]:
         args += ["-device", dev]
     if plan.audio != "none":
         dev = {"hda": ["intel-hda", "hda-duplex"], "ac97": ["AC97"], "sb16": ["sb16"]}[plan.audio]
-        args += ["-audiodev", "none,id=snd0"]
         for d in dev:
             args += ["-device", d if d == "intel-hda" else f"{d},audiodev=snd0"]
     return args

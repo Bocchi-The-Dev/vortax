@@ -94,6 +94,8 @@ VNC password reveal/change, tunnels, snapshots, storage cleanup, logs and a heal
 * **Console**: the guest's screen in a browser tab, no extra software. The dashboard proxies VNC over a WebSocket and
   answers QEMU's password challenge itself, so the browser never sees the VNC password. Mouse, keyboard, touch
   (tap, long-press = right click), Ctrl/Alt/Win toggles, Ctrl+Alt+Del, "Type text", screenshot, fullscreen.
+  Sound: start the VM with `--audio hda` (or `ac97`, `sb16`), open the Console and tap **Sound**. Raw 16-bit mono at
+  22050 Hz, about 44 KB/s. The guest needs a driver for the chosen card.
 * **Settings**: edit default RAM/CPU/tunnel/etc, save and run presets, dark or light theme, English or Arabic (RTL),
   browser notifications when a VM starts or stops.
 * It works at phone width. The token sits in the URL fragment, so it is never sent to the
