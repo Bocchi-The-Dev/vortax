@@ -70,6 +70,10 @@ def run_checks() -> list[Check]:
         cmd = envinfo.termux_install_command(miss)
         checks.append(Check("Termux", True, False, "detected: RAM default capped at 2 GB, no KVM" + (f"; missing tools -> {cmd}" if cmd else "")))
         checks.append(_tool("termux-wake-lock", False, "pkg install termux-api (keeps Android from killing the VM)"))
+        checks.append(Check("Android process killer", True, False,
+                            "if Termux closes with 'Process completed (signal 9)' while a VM runs, Android is killing it",
+                            "Developer options > 'Disable child process restrictions' (Android 14+); Android 12-13: "
+                            "adb shell settings put global settings_enable_monitor_phantom_procs false"))
     data = paths.data_dir()
     probe = data if data.exists() else data.parent
     while not probe.exists() and probe != probe.parent:

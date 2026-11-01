@@ -1,5 +1,5 @@
 {
-  "_comment": "Hardware presets for guests that break on modern QEMU defaults. Sourced from the Computernewb QEMU install guides (legacy Windows) and Batocera's own runQemu.sh. Keys: cpu (null = QEMU default, 'host' becomes 'max' under TCG), machine (-M value without accel), vga (QEMU args), vga_modes (alternative vga sets selectable with --gpu-mode), nic (null/'none' = no network), ram_mb (omit = use the run setting, null = do not pass -m), disk (size for a freshly created disk), kvm (true = use KVM when available), boot (cdrom|floppy), rtc, extra (raw args), hostfwd (host->guest TCP forwards, bound to 127.0.0.1).",
+  "_comment": "Hardware presets for guests that break on modern QEMU defaults. Sourced from the Computernewb QEMU install guides (legacy Windows) and Batocera's own runQemu.sh. Keys: cpu (null = QEMU default, 'host' becomes 'max' under TCG), machine (-M value without accel), vga (QEMU args), vga_modes (alternative vga sets selectable with --gpu-mode), nic (null/'none' = no network), ram_mb (omit = use the run setting, null = do not pass -m), disk (size for a freshly created disk), kvm (true = use KVM when available), boot (cdrom|floppy), rtc, extra (raw args), hostfwd (host->guest TCP forwards, bound to 127.0.0.1), tb_size_mb (cap on the TCG translation cache in MB, used only when running without KVM), vcpus_tcg (vCPU count to use without KVM, where extra vCPUs only add overhead).",
   "profiles": {
     "winnt4": {
       "name": "Windows NT 4.0",
@@ -36,6 +36,22 @@
       "kvm": true,
       "boot": "cdrom",
       "rtc": "localtime"
+    },
+    "winxp": {
+      "name": "Windows XP",
+      "cpu": "qemu64",
+      "machine": "pc,hpet=off,acpi=on,usb=on",
+      "vga": ["-vga", "cirrus"],
+      "nic": "rtl8139",
+      "ram_mb": 512,
+      "disk": "10G",
+      "kvm": true,
+      "boot": "cdrom",
+      "rtc": "localtime",
+      "tb_size_mb": 256,
+      "vcpus_tcg": 1,
+      "extra": ["-device", "usb-tablet"],
+      "notes": "Tuned for phones without KVM (Termux): 512 MB RAM and a 256 MB translation cache keep QEMU from growing until Android kills it. qemu64 boots both 32-bit and x64 XP. The USB tablet keeps the VNC pointer aligned. XP has no built-in driver for --audio hda; try sb16, or ac97 with the Realtek AC97 driver."
     },
     "win98": {
       "name": "Windows 98",

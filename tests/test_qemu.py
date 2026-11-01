@@ -87,6 +87,32 @@ class Legacy(unittest.TestCase):
         self.assertNotIn("usb-ehci,id=ehci", a)             # no virtio/USB-era devices
         self.assertIn("base=localtime", a)
 
+    def test_windows_xp_preset_is_tuned_for_a_phone(self):
+        from vortax import catalog
+        xp = catalog.load_profiles()["winxp"]
+        self.assertEqual(catalog.load_systems()["XP"].profile, "winxp")
+        a = qemu.build_command(plan(profile=xp, accel="tcg", ram_mb=2048))
+        self.assertEqual(flag(a, "-accel"), "tcg,tb-size=256")        # bounded translation cache
+        self.assertEqual(a.count("-accel"), 1)
+        self.assertEqual(flag(a, "-m"), "512")                        # the preset wins over a 2 GB phone default
+        self.assertEqual(flag(a, "-cpu"), "qemu64")
+        self.assertEqual(flag(a, "-vga"), "cirrus")
+        self.assertIn("rtl8139,netdev=net0", a)
+        self.assertIn("usb-tablet", a)                                # keeps the VNC pointer aligned
+        self.assertIn("base=localtime", a)
+        self.assertEqual(flag(a, "-smp"), "1")                        # TCG runs every vCPU on one host thread
+        k = qemu.build_command(plan(profile=xp, accel="kvm", vcpus=4))
+        self.assertEqual(flag(k, "-accel"), "kvm")                    # the cache cap is a TCG-only option
+        self.assertEqual(flag(k, "-smp"), "4")                        # with KVM the user's vCPU count is kept
+        self.assertEqual(flag(qemu.build_command(plan(profile=self.P["win98"], accel="tcg", vcpus=2)), "-smp"), "2")
+
+    def test_xp_audio_reaches_the_vnc_server_and_a_sound_card(self):
+        from vortax import catalog
+        a = qemu.build_command(plan(profile=catalog.load_profiles()["winxp"], accel="tcg", audio="sb16"))
+        self.assertEqual(flag(a, "-vnc"), "127.0.0.1:0,password=on,audiodev=snd0")
+        self.assertIn("sb16,audiodev=snd0", a)
+        self.assertLess(a.index("-audiodev"), a.index("-vnc"))
+
     def test_single_accel_flag_and_host_cpu_fallback(self):
         a = qemu.build_command(plan(profile=self.P["win98"]))
         self.assertEqual(a.count("-accel"), 1)

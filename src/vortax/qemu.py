@@ -143,11 +143,11 @@ def _netdev(plan: VMPlan) -> str:
     return spec
 
 
-def _common(plan: VMPlan) -> list[str]:
+def _common(plan: VMPlan, vcpus: int | None = None) -> list[str]:
     vnc = f"{plan.vnc_bind}:{plan.vnc_display}"
     if plan.vnc_password:
         vnc += ",password=on"
-    args = ["-name", plan.name, "-smp", str(plan.vcpus), "-display", "none"]
+    args = ["-name", plan.name, "-smp", str(vcpus or plan.vcpus), "-display", "none"]
     if plan.audio != "none":
         # Defined ahead of -vnc so the VNC server can stream the guest's sound to the dashboard console.
         args += ["-audiodev", "none,id=snd0"]
@@ -192,9 +192,11 @@ def _x86_modern(plan: VMPlan) -> list[str]:
 
 def _x86_legacy(plan: VMPlan) -> list[str]:
     prof = plan.profile or {}
-    args = _common(plan)
     use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
-    args += ["-accel", "kvm" if use_kvm else "tcg"]
+    # Software emulation runs every vCPU on one host thread, so extra vCPUs only add overhead there.
+    args = _common(plan, None if use_kvm else prof.get("vcpus_tcg"))
+    tb = prof.get("tb_size_mb")
+    args += ["-accel", "kvm" if use_kvm else (f"tcg,tb-size={int(tb)}" if tb else "tcg")]
     cpu = _cpu_for(prof.get("cpu"), "kvm" if use_kvm else "tcg")
     if cpu:
         args += ["-cpu", cpu]

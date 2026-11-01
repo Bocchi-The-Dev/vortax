@@ -8,6 +8,12 @@
   small jitter buffer. Mono 16-bit at 22050 Hz, about 44 KB/s, so it stays light over a tunnel. Browsers only unlock
   audio after a tap, which is why sound starts from the button.
 - `-vnc` now gets `audiodev=snd0` whenever a sound card is enabled.
+- **Windows XP preset** (`winxp`, used by the `XP` catalog entry): 512 MB RAM, a 256 MB cap on QEMU's translation cache
+  and one vCPU when running without KVM (extra vCPUs only add overhead there), `qemu64` CPU for 32-bit and x64 XP,
+  Cirrus display, RTL8139 network, a USB tablet so the VNC pointer stays aligned. Meant for phones, where QEMU
+  growing past Android's memory limit gets Termux killed.
+- Preset keys `tb_size_mb` and `vcpus_tcg`.
+- `vortax doctor` on Termux explains Android's "Process completed (signal 9)" and how to switch the limit off.
 
 ## 3.1.0b1
 

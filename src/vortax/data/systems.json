@@ -384,6 +384,7 @@
    "id": "XP",
    "name": "Windows XP Pro x64",
    "family": "windows",
+   "profile": "winxp",
    "icon": "windows",
    "disk_gb": 20,
    "arch": "x86_64",
