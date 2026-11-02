@@ -47,7 +47,8 @@ class VMPlan:
     forwards: list[tuple[str, int, int]] = field(default_factory=list)
     shares: list[tuple[str, str]] = field(default_factory=list)     # (host path, 9p mount tag)
     usb: list[tuple[int, int]] = field(default_factory=list)        # (vendor id, product id)
-    audio: str = "none"                                              # none | hda | ac97 | sb16
+    audio: str = "none"                                              # none | hda | ac97 | sb16 | es1370
+    mttcg: bool = False                # software emulation only: run vCPUs on several host threads (experimental)
     profile: dict[str, Any] | None = None
     gpu_mode: str = "virtio"
     extra_args: list[str] = field(default_factory=list)
@@ -143,11 +144,30 @@ def _netdev(plan: VMPlan) -> str:
     return spec
 
 
-def _common(plan: VMPlan, vcpus: int | None = None) -> list[str]:
+def _smp(count: int, one_socket: bool = False) -> str:
+    """-smp value. One socket with several cores lets editions limited to one physical CPU (XP Home) use them all."""
+    return f"{count},sockets=1,cores={count}" if one_socket and count > 1 else str(count)
+
+
+def _tcg_accel(plan: VMPlan, tb_size_mb: int | None = None) -> str:
+    opts = ["tcg"]
+    if tb_size_mb:
+        opts.append(f"tb-size={int(tb_size_mb)}")
+    if plan.mttcg:
+        opts.append("thread=multi")
+    return ",".join(opts)
+
+
+def _legacy_vcpus(plan: VMPlan, prof: dict, use_kvm: bool) -> int:
+    """Without KVM every vCPU shares one host thread unless multi-threaded TCG is on, so a preset can cap the count."""
+    return plan.vcpus if (use_kvm or plan.mttcg) else (prof.get("vcpus_tcg") or plan.vcpus)
+
+
+def _common(plan: VMPlan, vcpus: int | None = None, one_socket: bool = False) -> list[str]:
     vnc = f"{plan.vnc_bind}:{plan.vnc_display}"
     if plan.vnc_password:
         vnc += ",password=on"
-    args = ["-name", plan.name, "-smp", str(vcpus or plan.vcpus), "-display", "none"]
+    args = ["-name", plan.name, "-smp", _smp(vcpus or plan.vcpus, one_socket), "-display", "none"]
     if plan.audio != "none":
         # Defined ahead of -vnc so the VNC server can stream the guest's sound to the dashboard console.
         args += ["-audiodev", "none,id=snd0"]
@@ -177,7 +197,8 @@ def _cpu_for(cpu: str | None, accel: str) -> str | None:
 
 def _x86_modern(plan: VMPlan) -> list[str]:
     args = _common(plan)
-    args += ["-accel", plan.accel, "-cpu", "host" if plan.accel == "kvm" else "max"]
+    args += ["-accel", _tcg_accel(plan) if plan.accel == "tcg" else plan.accel,
+             "-cpu", "host" if plan.accel == "kvm" else "max"]
     if plan.ram_mb:
         args += ["-m", str(plan.ram_mb)]
     if plan.bios_file and plan.firmware == "bios":
@@ -193,10 +214,8 @@ def _x86_modern(plan: VMPlan) -> list[str]:
 def _x86_legacy(plan: VMPlan) -> list[str]:
     prof = plan.profile or {}
     use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
-    # Software emulation runs every vCPU on one host thread, so extra vCPUs only add overhead there.
-    args = _common(plan, None if use_kvm else prof.get("vcpus_tcg"))
-    tb = prof.get("tb_size_mb")
-    args += ["-accel", "kvm" if use_kvm else (f"tcg,tb-size={int(tb)}" if tb else "tcg")]
+    args = _common(plan, _legacy_vcpus(plan, prof, use_kvm), bool(prof.get("smp_one_socket")))
+    args += ["-accel", "kvm" if use_kvm else _tcg_accel(plan, prof.get("tb_size_mb"))]
     cpu = _cpu_for(prof.get("cpu"), "kvm" if use_kvm else "tcg")
     if cpu:
         args += ["-cpu", cpu]
@@ -245,7 +264,7 @@ def _extra_devices(plan: VMPlan) -> list[str]:
             dev += ",bus=ehci.0"                       # the controller added for the tablet
         args += ["-device", dev]
     if plan.audio != "none":
-        dev = {"hda": ["intel-hda", "hda-duplex"], "ac97": ["AC97"], "sb16": ["sb16"]}[plan.audio]
+        dev = {"hda": ["intel-hda", "hda-duplex"], "ac97": ["AC97"], "sb16": ["sb16"], "es1370": ["ES1370"]}[plan.audio]
         for d in dev:
             args += ["-device", d if d == "intel-hda" else f"{d},audiodev=snd0"]
     return args
@@ -273,7 +292,7 @@ def effective_resources(plan: VMPlan) -> tuple[int, int]:
         return plan.ram_mb or 0, plan.vcpus
     use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
     ram = prof["ram_mb"] if "ram_mb" in prof else plan.ram_mb
-    return ram or 0, (plan.vcpus if use_kvm else (prof.get("vcpus_tcg") or plan.vcpus))
+    return ram or 0, _legacy_vcpus(plan, prof, use_kvm)
 
 
 def build_command(plan: VMPlan) -> list[str]:

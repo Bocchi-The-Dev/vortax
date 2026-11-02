@@ -48,6 +48,18 @@ class Builder(unittest.TestCase):
         self.assertIn("AC97,audiodev=snd0", a)
         self.assertNotIn("audiodev", self.plan()[self.plan().index("-vnc") + 1])
 
+    def test_new_options_validate_and_read_from_env(self):
+        from vortax import settings
+        self.assertIn("es1370", settings.AUDIO)
+        self.assertTrue(settings.resolve({"mttcg": True}, environ={}, config={}).mttcg)
+        self.assertTrue(settings.resolve(None, environ={"VORTAX_MTTCG": "1"}, config={}).mttcg)
+        self.assertFalse(settings.resolve(None, environ={}, config={}).mttcg)
+        self.assertEqual(settings.resolve({"audio": "es1370"}, environ={}, config={}).audio, "es1370")
+        ns = cli.build_parser().parse_args(["start", "--mttcg", "--audio", "es1370", "--vcpus", "4"])
+        self.assertTrue(ns.mttcg)
+        self.assertEqual((ns.audio, ns.vcpus), ("es1370", 4))
+        self.assertIsNone(cli.build_parser().parse_args(["start"]).mttcg)      # unset = keep the saved or default value
+
     def test_defaults_have_no_extras(self):
         a = self.plan()
         for bad in ("-virtfs", "usb-host", "-audiodev"):

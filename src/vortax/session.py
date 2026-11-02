@@ -548,7 +548,7 @@ def make_plan(settings: Settings, resolved: catalog.Resolved, inst: Instance, pr
         monitor_sock=str(inst.sock), virtio_iso=settings.virtio_iso,
         forwards=[parse_forward(f) for f in settings.forward] + list(extra_forwards),
         shares=[parse_share(x) for x in settings.shares], usb=[parse_usb(x) for x in settings.usb],
-        audio=settings.audio,
+        audio=settings.audio, mttcg=settings.mttcg,
         profile=profile, gpu_mode=settings.gpu_mode, extra_args=settings.extra_args(), warnings=warnings,
     )
 

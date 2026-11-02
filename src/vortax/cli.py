@@ -62,6 +62,8 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
                    help="share a host folder with the guest over 9p (mount_tag TAG); repeatable")
     g.add_argument("--usb", action="append", metavar="VID:PID", help="pass a host USB device through; repeatable")
     g.add_argument("--audio", choices=settings.AUDIO, help="emulated sound card (default none)")
+    g.add_argument("--mttcg", action="store_true", default=None,
+                   help="without KVM, let several vCPUs run on several host cores (experimental: may crash x86 guests on ARM)")
     g.add_argument("--ssh", action="store_true", default=None, help="forward a local port to the guest's SSH (22)")
     g.add_argument("--snapshot-on-stop", action="store_true", default=None,
                    help="save the live state on stop and resume it on next start (qcow2 only)")
@@ -78,7 +80,7 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
 
 
 _LIST_FIELDS = ("forward", "shares", "usb")
-_BOOL_FIELDS = ("no_password", "ssh", "snapshot_on_stop", "notify")
+_BOOL_FIELDS = ("no_password", "ssh", "snapshot_on_stop", "notify", "mttcg")
 
 
 def _apply_target(ns: argparse.Namespace) -> dict:

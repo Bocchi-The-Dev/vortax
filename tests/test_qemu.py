@@ -103,7 +103,7 @@ class Legacy(unittest.TestCase):
         self.assertEqual(flag(a, "-smp"), "1")                        # TCG runs every vCPU on one host thread
         k = qemu.build_command(plan(profile=xp, accel="kvm", vcpus=4))
         self.assertEqual(flag(k, "-accel"), "kvm")                    # the cache cap is a TCG-only option
-        self.assertEqual(flag(k, "-smp"), "4")                        # with KVM the user's vCPU count is kept
+        self.assertEqual(flag(k, "-smp"), "4,sockets=1,cores=4")      # KVM keeps the user's count; one socket so XP Home uses all
         self.assertEqual(flag(qemu.build_command(plan(profile=self.P["win98"], accel="tcg", vcpus=2)), "-smp"), "2")
 
     def test_status_shows_what_really_runs(self):
@@ -117,8 +117,28 @@ class Legacy(unittest.TestCase):
                 p = plan(profile=prof, accel=accel, ram_mb=1880, vcpus=3)
                 ram, cpus = qemu.effective_resources(p)
                 argv = qemu.build_command(p)
-                self.assertEqual(flag(argv, "-smp"), str(cpus))
+                self.assertEqual(flag(argv, "-smp").split(",")[0], str(cpus))
                 self.assertEqual(flag(argv, "-m"), str(ram) if ram else None)
+
+    def test_multithreaded_tcg_is_opt_in_and_unlocks_the_vcpu_count(self):
+        from vortax import catalog
+        xp = catalog.load_profiles()["winxp"]
+        a = qemu.build_command(plan(profile=xp, accel="tcg", vcpus=4, mttcg=True))
+        self.assertEqual(flag(a, "-accel"), "tcg,tb-size=256,thread=multi")
+        self.assertEqual(flag(a, "-smp"), "4,sockets=1,cores=4")
+        self.assertEqual(qemu.effective_resources(plan(profile=xp, accel="tcg", vcpus=4, mttcg=True)), (512, 4))
+        off = qemu.build_command(plan(profile=xp, accel="tcg", vcpus=4))      # without the switch: still one vCPU
+        self.assertEqual(flag(off, "-smp"), "1")
+        self.assertNotIn("thread=multi", flag(off, "-accel"))
+        self.assertEqual(flag(qemu.build_command(plan(accel="tcg", mttcg=True)), "-accel"), "tcg,thread=multi")
+        self.assertEqual(flag(qemu.build_command(plan(accel="tcg")), "-accel"), "tcg")
+        self.assertEqual(flag(qemu.build_command(plan(accel="kvm", mttcg=True)), "-accel"), "kvm")
+        self.assertEqual(flag(qemu.build_command(plan(vcpus=2)), "-smp"), "2")  # no preset: plain count
+
+    def test_es1370_sound_card(self):
+        a = qemu.build_command(plan(audio="es1370"))
+        self.assertIn("ES1370,audiodev=snd0", a)
+        self.assertEqual(flag(a, "-vnc"), "127.0.0.1:0,password=on,audiodev=snd0")
 
     def test_xp_audio_reaches_the_vnc_server_and_a_sound_card(self):
         from vortax import catalog

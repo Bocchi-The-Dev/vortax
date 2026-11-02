@@ -249,7 +249,7 @@ function launchForm(sys) {
     field("vCPUs", h("input", { id: "f_cpu", type: "number", min: "1", value: "2" })),
     field("Tunnel", select("f_tunnel", catalog.options.tunnels, "none")),
     field("Runtime (min, 0 = none)", h("input", { id: "f_rt", type: "number", min: "0", value: "0" })),
-    field("Sound", select("f_audio", ["none", "hda", "ac97", "sb16"], "none")),
+    field("Sound", select("f_audio", ["none", "hda", "ac97", "sb16", "es1370"], "none")),
     field("SSH forward", select("f_ssh", ["off", "on"], "off")),
     field("Resume where you left off", select("f_snap", ["off", "on"], "off")),
     field("Notify on start/stop", select("f_notify", ["off", "on"], "off")),

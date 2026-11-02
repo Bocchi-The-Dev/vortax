@@ -14,6 +14,11 @@
   growing past Android's memory limit gets Termux killed.
 - Preset keys `tb_size_mb` and `vcpus_tcg`.
 - `status` and the dashboard now show the RAM and vCPU count QEMU really gets; a preset can override the requested values.
+- Sound card `es1370` (`--audio es1370`): Windows 2000/XP ship a driver for it, which stripped-down XP images often lack for
+  the other cards.
+- `--mttcg` (`VORTAX_MTTCG`): without KVM, run several vCPUs on several host threads (`-accel tcg,thread=multi`). Experimental
+  for x86 guests on ARM phones: QEMU warns that the guest expects stronger memory ordering than the host gives.
+  The XP preset puts all vCPUs in one socket so XP Home can use them; XP must use its multiprocessor HAL.
 - `vortax doctor` on Termux explains Android's "Process completed (signal 9)" and how to switch the limit off.
 
 ## 3.1.0b1

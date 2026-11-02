@@ -30,7 +30,7 @@ ARCHES = ("x86_64", "aarch64")
 ACCEL = ("auto", "kvm", "tcg")
 GPU_MODES = ("virtio", "bochs", "std")
 BOOT_ORDER = ("auto", "disk", "cdrom")
-AUDIO = ("none", "hda", "ac97", "sb16")
+AUDIO = ("none", "hda", "ac97", "sb16", "es1370")
 NICS = ("e1000", "e1000e", "virtio-net-pci", "rtl8139", "pcnet", "ne2k_pci")
 
 _SECRET_FIELDS = ("password", "access_password")
@@ -67,7 +67,8 @@ class Settings:
     virtio_iso: str = ""            # path to virtio-win.iso to attach
     shares: list = field(default_factory=list)    # ["/host/dir[:tag]", ...] shared via 9p (Linux guests)
     usb: list = field(default_factory=list)       # ["vendor:product", ...] host USB devices to pass through
-    audio: str = "none"             # none | hda | ac97 | sb16: sound device for guests that need one
+    audio: str = "none"             # none | hda | ac97 | sb16 | es1370: sound device for guests that need one
+    mttcg: bool = False             # no KVM: run vCPUs on several host threads (experimental for x86 guests on ARM)
     ssh: bool = False               # forward a free host port to guest port 22 (see `vortax ssh`)
     snapshot_on_stop: bool = False  # savevm "auto-<time>" before a graceful stop (qcow2 only)
     notify: bool = False            # notify (Termux / desktop / VORTAX_NOTIFY_URL) when long jobs finish
