@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- **Trusted-device sign-in**: the link `vortax dashboard` prints is now a one-time link. The first browser that opens it is
+  trusted (its private key stays in that browser) and the link stops working, so a second phone cannot use it. More phones
+  can join only if you raise the limit (`--max-devices N`, then a fresh link from Settings) or set a password
+  (`--set-password`; wrong guesses are throttled). `--devices`, `--revoke ID`, `--reset-devices` manage the list, and
+  Settings has a Trusted devices card. Only hashes of keys are stored. The owner token in `dashboard.token` still works for scripts.
+- **Live edit**: `vortax live --name VM --cd ISO | --eject | --audio ac97|es1370|hda | --no-audio` (and a Live edit button)
+  swap a CD or plug a sound card in and out of a running VM through the QEMU monitor. A VM with no CD drive gets a USB CD
+  drive. The audio backend is now always defined at start so a card can be added later.
+- **New dashboard look**: one token-based theme for dark and light, a scrollable tab bar on phones, bottom-sheet dialogs,
+  aligned forms and cards, and a sign-in screen for untrusted browsers.
 - **Console sound**: with `--audio hda|ac97|sb16` the dashboard console has a **Sound** button. QEMU streams the guest's
   audio over the same VNC connection (QEMU's audio extension, pseudo-encoding -259) and the browser plays it with a
   small jitter buffer. Mono 16-bit at 22050 Hz, about 44 KB/s, so it stays light over a tunnel. Browsers only unlock

@@ -43,6 +43,8 @@ const AR = {
   "SSH forward": "تحويل SSH", "Resume where you left off": "المتابعة من حيث توقفت", "Notify on start/stop": "إشعار عند التشغيل/الإيقاف",
   "Save as preset (optional)": "حفظ كقالب (اختياري)", "Nothing changed": "لم يتغير شيء", "Logs": "السجلات", "Log": "السجل",
   "Your own image": "صورتك الخاصة", "Run a custom source": "تشغيل مصدر مخصص", "Open in browser (noVNC)": "فتح في المتصفح (noVNC)",
+  "Live edit": "تعديل مباشر", "Trusted devices": "الأجهزة الموثوقة", "Remove": "إزالة", "Sign in": "تسجيل الدخول", "Password": "كلمة المرور",
+  "New one-time link": "رابط جديد لمرة واحدة", "Copy": "نسخ", "Attach": "إرفاق", "Eject": "إخراج", "Add": "إضافة", "Sound card": "كارت الصوت",
 };
 const lang = () => store.get("lang", "en");
 const T = (s) => (lang() === "ar" && AR[s]) || s;
@@ -151,7 +153,8 @@ function vmCard(vm) {
     row.append(h("button", { class: "btn warn", text: "Stop", onclick: () => confirmThen(`Shut down ${vm.name}? The guest gets a power-button press.`, () => vmAct(vm.name, "stop")) }),
       h("button", { class: "btn good", text: "Reboot", onclick: () => confirmThen(`Reset ${vm.name}? Unsaved work in the guest is lost.`, () => vmAct(vm.name, "reboot")) }),
       h("button", { class: "btn bad", text: "Kill", onclick: () => confirmThen(`Kill ${vm.name} immediately? This is like pulling the plug.`, () => vmAct(vm.name, "kill")) }),
-      h("button", { class: "btn", text: "Connect", onclick: () => { view = "access"; render(); } }));
+      h("button", { class: "btn", text: "Connect", onclick: () => { view = "access"; render(); } }),
+      h("button", { class: "btn", text: "Live edit", onclick: () => liveEdit(vm.name) }));
   } else if (vm.disk) {
     row.append(h("button", { class: "btn primary", text: "Start", onclick: () => vmAct(vm.name, "start") }),
       h("button", { class: "btn", text: "Boot from disk", onclick: () => bootFromDisk(vm.name) }),
@@ -181,6 +184,25 @@ async function editVm(name) {
       const done = await act(() => api("vm/edit", { name, changes }), "Saved. It applies the next time the VM starts.");
       if (done) closeModal();
     } }), h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+}
+
+/* Change a running VM without restarting it: swap a CD, plug in or pull out a sound card. */
+function liveEdit(name) {
+  const send = async (action, value) => {
+    const r = await act(() => api("vm/live", { name, action, value }));
+    if (r) toast(r.message);
+  };
+  const iso = h("input", { id: "l_iso", placeholder: "/data/data/com.termux/files/home/drivers.iso", autocapitalize: "off", spellcheck: "false" });
+  const card = select("l_card", ["ac97", "es1370", "hda"], "ac97");
+  openModal(h("h3", { text: "Live edit · " + name }),
+    h("p", { class: "sub", text: "Applied immediately, no restart. Windows XP may need Device Manager > Action > Scan for hardware changes." }),
+    h("h2", { class: "gap", text: "CD" }), field("ISO path on this machine", iso),
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Attach", onclick: () => send("cd_attach", iso.value.trim()) }),
+      h("button", { class: "btn", text: "Eject", onclick: () => send("cd_eject", "") })),
+    h("h2", { class: "gap", text: "Sound card" }), field("Card", card),
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Add", onclick: () => send("audio_add", card.value) }),
+      h("button", { class: "btn", text: "Remove", onclick: () => send("audio_remove", "") })),
+    h("div", { class: "row end" }, h("button", { class: "btn", text: "Close", onclick: closeModal })));
 }
 
 function bootFromDisk(name) {
@@ -538,6 +560,8 @@ function go(v) { view = v; render(); }
 function buildNav() {
   const nav = $("#tabs"); nav.replaceChildren();
   for (const [id, label, ic] of TABS) nav.append(h("button", { class: "tab", "aria-current": id === view ? "page" : false, onclick: () => go(id) }, icon(ic), h("span", { text: T(label) })));
+  const cur = nav.querySelector("[aria-current]");                       // on a phone the tab row scrolls: keep the open tab in view
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ inline: "center", block: "nearest" });
 }
 async function render() {
   if (view !== "console") stopConsole();
