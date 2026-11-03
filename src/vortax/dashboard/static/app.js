@@ -43,7 +43,7 @@ const AR = {
   "SSH forward": "تحويل SSH", "Resume where you left off": "المتابعة من حيث توقفت", "Notify on start/stop": "إشعار عند التشغيل/الإيقاف",
   "Save as preset (optional)": "حفظ كقالب (اختياري)", "Nothing changed": "لم يتغير شيء", "Logs": "السجلات", "Log": "السجل",
   "Your own image": "صورتك الخاصة", "Run a custom source": "تشغيل مصدر مخصص", "Open in browser (noVNC)": "فتح في المتصفح (noVNC)",
-  "Live edit": "تعديل مباشر", "Trusted devices": "الأجهزة الموثوقة", "Remove": "إزالة", "Sign in": "تسجيل الدخول", "Password": "كلمة المرور",
+  "Live edit": "تعديل مباشر", "CPU model": "طراز المعالج", "Touch: direct": "اللمس: مباشر", "Touch: trackpad": "اللمس: لوحة لمس", "Trusted devices": "الأجهزة الموثوقة", "Remove": "إزالة", "Sign in": "تسجيل الدخول", "Password": "كلمة المرور",
   "New one-time link": "رابط جديد لمرة واحدة", "Copy": "نسخ", "Attach": "إرفاق", "Eject": "إخراج", "Add": "إضافة", "Sound card": "كارت الصوت",
 };
 const lang = () => store.get("lang", "en");
@@ -172,6 +172,7 @@ async function editVm(name) {
   const f = h("div", { class: "form" },
     field("RAM (MB, 0 = auto)", num("e_ram", x.ram_mb, "0")),
     field("vCPUs", num("e_cpu", x.vcpus, "1")),
+    field("CPU model", select("e_cpu_model", o.cpu, x.cpu || "")),
     field("Sound", select("e_audio", o.audio, x.audio)),
     field("Network card", select("e_nic", o.nic, x.nic)),
     field("Acceleration", select("e_accel", o.accel, x.accel)),
@@ -180,7 +181,7 @@ async function editVm(name) {
     h("p", { class: "sub", text: "Takes effect the next time the VM starts. The disk and your installed system are not touched." }), f,
     h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save", onclick: async () => {
       const v = (id) => $("#" + id).value;
-      const changes = { ram_mb: Number(v("e_ram")), vcpus: Number(v("e_cpu")), audio: v("e_audio"), nic: v("e_nic"), accel: v("e_accel"), mttcg: v("e_mt") === "on" };
+      const changes = { ram_mb: Number(v("e_ram")), vcpus: Number(v("e_cpu")), audio: v("e_audio"), cpu: v("e_cpu_model"), nic: v("e_nic"), accel: v("e_accel"), mttcg: v("e_mt") === "on" };
       const done = await act(() => api("vm/edit", { name, changes }), "Saved. It applies the next time the VM starts.");
       if (done) closeModal();
     } }), h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
@@ -294,6 +295,7 @@ function launchForm(sys) {
     field("vCPUs", h("input", { id: "f_cpu", type: "number", min: "1", value: "2" })),
     field("Tunnel", select("f_tunnel", catalog.options.tunnels, "none")),
     field("Runtime (min, 0 = none)", h("input", { id: "f_rt", type: "number", min: "0", value: "0" })),
+    field("CPU model", select("f_cpu_model", ["", "qemu64", "qemu32", "pentium3", "core2duo", "Nehalem", "Haswell", "max"], "")),
     field("Sound", select("f_audio", ["none", "hda", "ac97", "sb16", "es1370"], "none")),
     field("SSH forward", select("f_ssh", ["off", "on"], "off")),
     field("Resume where you left off", select("f_snap", ["off", "on"], "off")),
@@ -311,6 +313,7 @@ async function submitLaunch(sys) {
   if (sys) { body.system = sys.id; if (v("f_mode")) body.boot_mode = v("f_mode"); } else body.source = v("f_source");
   if (v("f_profile")) body.profile = v("f_profile");
   if (v("f_audio") && v("f_audio") !== "none") body.audio = v("f_audio");
+  if (v("f_cpu_model")) body.cpu = v("f_cpu_model");
   if (v("f_ssh") === "on") body.ssh = true;
   if (v("f_snap") === "on") body.snapshot_on_stop = true;
   if (v("f_notify") === "on") body.notify = true;
@@ -412,21 +415,60 @@ function renderConsole() {
   const connect = () => {
     stopConsole(); status.textContent = "connecting...";
     rfb = new RFB(canvas, `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/vnc?name=${encodeURIComponent(sel.value)}`, ["vortax.v1", "tok." + token], {
-      onready: (name, w, hh) => { status.textContent = `${name || sel.value} · ${w}×${hh}`; canvas.focus(); fitScreen(); },
+      onready: (name, w, hh) => { status.textContent = `${name || sel.value} · ${w}×${hh}`; canvas.focus(); vx = w / 2; vy = hh / 2; fitScreen(); showCursor(); },
       onclose: () => { status.textContent = "disconnected"; }, onerror: () => { status.textContent = "connection failed"; } });
   };
   sel.addEventListener("change", () => { consoleName = sel.value; connect(); });
   const pos = (ev) => { const r = canvas.getBoundingClientRect(); return [(ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height]; };
   const mask = (ev) => (ev.buttons & 1 ? 1 : 0) | (ev.buttons & 4 ? 2 : 0) | (ev.buttons & 2 ? 4 : 0);
-  canvas.addEventListener("pointermove", (ev) => { if (rfb && ev.pointerType === "mouse") rfb.pointer(...pos(ev), mask(ev)); });
-  canvas.addEventListener("pointerdown", (ev) => { canvas.focus(); if (!rfb) return; canvas.setPointerCapture(ev.pointerId); const p = pos(ev); rfb.pointer(...p, ev.pointerType === "mouse" ? mask(ev) : 1); ev.preventDefault(); });
-  canvas.addEventListener("pointerup", (ev) => { if (!rfb) return; rfb.pointer(...pos(ev), 0); releaseMods(); });
-  canvas.addEventListener("pointercancel", () => { if (rfb) rfb.pointer(0, 0, 0); });
+  /* Touch has two modes. Direct: the guest cursor goes where the finger is, and dragging holds the button (drag windows, select text).
+     Trackpad: dragging moves the cursor like a laptop pad, a tap clicks where the cursor is, a long press or two fingers right-click.
+     A real mouse always works directly. */
+  const touchMode = () => store.get("touch", "direct");
+  let vx = canvas.width / 2, vy = canvas.height / 2, drag = null;
+  const cursor = h("div", { class: "vcursor", hidden: true });
+  const showCursor = () => { const r = canvas.getBoundingClientRect(), w = wrap.getBoundingClientRect(); cursor.hidden = touchMode() !== "trackpad";
+    cursor.style.left = (r.left - w.left + vx * r.width / canvas.width) + "px"; cursor.style.top = (r.top - w.top + vy * r.height / canvas.height) + "px"; };
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!rfb) return;
+    if (ev.pointerType === "mouse") return rfb.pointer(...pos(ev), mask(ev));
+    if (!drag) return;
+    if (touchMode() === "trackpad") {
+      const r = canvas.getBoundingClientRect(), k = 1.6;
+      vx = Math.max(0, Math.min(canvas.width - 1, vx + (ev.clientX - drag.x) * canvas.width / r.width * k));
+      vy = Math.max(0, Math.min(canvas.height - 1, vy + (ev.clientY - drag.y) * canvas.height / r.height * k));
+      drag.x = ev.clientX; drag.y = ev.clientY; rfb.pointer(vx, vy, 0); showCursor();
+    } else rfb.pointer(...pos(ev), 1);
+    if (Math.hypot(ev.clientX - drag.sx, ev.clientY - drag.sy) > 8) drag.moved = true;
+  });
+  canvas.addEventListener("pointerdown", (ev) => {
+    canvas.focus(); if (!rfb) return; canvas.setPointerCapture(ev.pointerId); ev.preventDefault();
+    if (ev.pointerType === "mouse") return rfb.pointer(...pos(ev), mask(ev));
+    drag = { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, moved: false, t: Date.now() };
+    if (touchMode() === "direct") rfb.pointer(...pos(ev), 1);
+  });
+  const lift = (ev) => {
+    if (!rfb) return;
+    if (ev.pointerType === "mouse") { rfb.pointer(...pos(ev), 0); return releaseMods(); }
+    if (touchMode() === "trackpad") { if (drag && !drag.moved && Date.now() - drag.t < 350 && !drag.right) { rfb.pointer(vx, vy, 1); rfb.pointer(vx, vy, 0); } }
+    else rfb.pointer(...pos(ev), 0);
+    drag = null; releaseMods();
+  };
+  canvas.addEventListener("pointerup", lift);
+  canvas.addEventListener("pointercancel", () => { if (rfb) rfb.pointer(vx, vy, 0); drag = null; });
   canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
   canvas.addEventListener("wheel", (ev) => { if (!rfb) return; const [x, y] = pos(ev), b = ev.deltaY < 0 ? 8 : 16; rfb.pointer(x, y, b); rfb.pointer(x, y, 0); ev.preventDefault(); }, { passive: false });
   // long-press on touch = right click
   let press = null;
-  canvas.addEventListener("touchstart", (ev) => { if (ev.touches.length === 1 && rfb) { const t = ev.touches[0]; press = setTimeout(() => { const p = pos(t); rfb.pointer(...p, 4); rfb.pointer(...p, 0); press = null; }, 600); } });
+  canvas.addEventListener("touchstart", (ev) => {
+    if (!rfb) return;
+    const trackpad = touchMode() === "trackpad";
+    if (ev.touches.length === 2 && trackpad) { rfb.pointer(vx, vy, 4); rfb.pointer(vx, vy, 0); if (drag) drag.right = true; return; }   // two fingers = right click
+    if (ev.touches.length === 1) {
+      const t = ev.touches[0];
+      press = setTimeout(() => { const p = trackpad ? [vx, vy] : pos(t); if (!trackpad) rfb.pointer(...p, 0); rfb.pointer(...p, 4); rfb.pointer(...p, 0); if (drag) drag.right = true; press = null; }, 600);
+    }
+  });
   for (const n of ["touchend", "touchmove", "touchcancel"]) canvas.addEventListener(n, () => { if (press) { clearTimeout(press); press = null; } });
   const keyEvent = (down) => (ev) => {
     if (!rfb || ev.target === typer) return;
@@ -442,6 +484,8 @@ function renderConsole() {
   });
   const toolbar = h("div", { class: "row toolbar" }, sel, status,
     h("button", { class: "btn sm", text: "Keyboard", onclick: () => typer.focus() }),
+    h("button", { class: "btn sm", id: "touchmode", text: touchMode() === "trackpad" ? "Touch: trackpad" : "Touch: direct", title: "How a finger moves the pointer", onclick: (e) => {
+      const next = touchMode() === "trackpad" ? "direct" : "trackpad"; store.set("touch", next); e.target.textContent = next === "trackpad" ? "Touch: trackpad" : "Touch: direct"; showCursor(); } }),
     modBtn("Ctrl", MODS.ctrl), modBtn("Alt", MODS.alt), modBtn("Win", MODS.meta),
     h("button", { class: "btn sm", text: "Esc", onclick: () => rfb && rfb.tap(0xff1b) }),
     h("button", { class: "btn sm", text: "Tab", onclick: () => rfb && rfb.tap(0xff09) }),
@@ -460,7 +504,8 @@ function renderConsole() {
     h("button", { class: "btn sm", text: "Keyboard", onclick: () => typer.focus() }),
     h("button", { class: "btn sm", text: "Ctrl+Alt+Del", onclick: () => rfb && rfb.combo([0xffe3, 0xffe9, 0xffff]) }),
     h("button", { class: "btn sm bad", text: "Exit fullscreen", onclick: () => toggleFullscreen(wrap) }));
-  const wrap = h("div", { class: "screenwrap", id: "screenwrap" }, canvas, typer, fsBar);
+  const wrap = h("div", { class: "screenwrap", id: "screenwrap" }, canvas, cursor, typer, fsBar);
+  wrap.sync = showCursor;
   root.append(h("div", { class: "card console" }, toolbar, wrap));
   fitScreen();
   setTimeout(connect, 0);
@@ -484,6 +529,7 @@ function fitScreen() {
     canvas.style.width = Math.floor(canvas.width * s) + "px"; canvas.style.height = Math.floor(canvas.height * s) + "px"; canvas.style.maxWidth = "none";
     canvas.focus();
   } else { canvas.style.width = canvas.style.height = canvas.style.maxWidth = ""; }
+  if (wrap.sync) wrap.sync();
 }
 for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) document.addEventListener(ev, fitScreen);
 window.addEventListener("resize", fitScreen);

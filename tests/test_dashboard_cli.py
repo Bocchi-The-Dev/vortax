@@ -228,6 +228,21 @@ class Dashboard(Sandbox):
         got = session.edit_settings(inst, {"vcpus": 1})
         self.assertFalse(got["mttcg"])
 
+    def test_edit_cpu_model(self):
+        src = self.tmp / "c.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed6", "source": str(src), "ram_mb": 64, "accel": "tcg"})
+        self.wait_job(body["job"])
+        inst = session.Instance("ed6")
+        self.addCleanup(inst.kill)
+        inst.stop(graceful=False, timeout=5, log=lambda *_: None)
+        s, out, _ = self.call("POST", "/api/vm/edit", {"name": "ed6", "changes": {"cpu": "core2duo"}})
+        self.assertEqual((s, out["values"]["cpu"]), (200, "core2duo"))
+        self.assertIn("core2duo", out["options"]["cpu"])
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed6", "changes": {"cpu": "bad cpu"}})[0], 400)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["edit", "--name", "ed6", "--cpu", ""]), 0)       # empty = automatic again
+        self.assertEqual(session.load_saved_settings(inst)["cpu"], "")
+
     def test_driver_iso_errors(self):
         from vortax import isobuild
         from vortax.errors import MissingToolError, VortaxError

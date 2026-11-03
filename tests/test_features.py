@@ -258,3 +258,25 @@ class LatestSource(Sandbox):
             p = fetch.download("latest:alpine", self.tmp / "cache", log=lambda m: None)
         self.assertEqual(seen, ["https://x.test/a-2.iso"])
         self.assertIn("a-2.iso", p.name)
+
+
+class CpuModel(Sandbox):
+    def test_cpu_model_reaches_qemu_on_every_x86_path(self):
+        from vortax import catalog, qemu, settings
+        from tests.test_qemu import plan, flag
+        self.assertEqual(flag(qemu.build_command(plan(cpu="core2duo", accel="tcg")), "-cpu"), "core2duo")
+        self.assertEqual(flag(qemu.build_command(plan(accel="tcg")), "-cpu"), "max")                       # automatic stays as before
+        xp = catalog.load_profiles()["winxp"]
+        self.assertEqual(flag(qemu.build_command(plan(profile=xp, accel="tcg")), "-cpu"), "qemu64")        # the preset's own model
+        self.assertEqual(flag(qemu.build_command(plan(profile=xp, accel="tcg", cpu="pentium3")), "-cpu"), "pentium3")
+        self.assertEqual(flag(qemu.build_command(plan(cpu="host", accel="tcg")), "-cpu"), "max")           # host means max without KVM
+
+    def test_cpu_model_is_validated(self):
+        from vortax import settings
+        from vortax.errors import VortaxError
+        ok = settings.resolve({"cpu": "Skylake-Client,-avx512f"}, environ={}, config={})
+        self.assertEqual(ok.cpu, "Skylake-Client,-avx512f")
+        for bad in ("qemu64 -smp 9", "a;b", "x,,y", "$(id)", "a" * 60):
+            with self.assertRaises(VortaxError):
+                settings.resolve({"cpu": bad}, environ={}, config={})
+

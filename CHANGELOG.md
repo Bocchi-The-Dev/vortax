@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **CPU model**: `--cpu MODEL` (also in `vortax edit` and the dashboard's launch and Edit forms) picks the guest CPU, for
+  example `qemu64`, `pentium3`, `core2duo` or `max`. Empty keeps the automatic choice or the hardware preset's own.
+- **Touch input in the console**: dragging with a finger now holds the button (windows and text selections can be dragged;
+  before, only press and release were sent). A new **Touch: direct / trackpad** button switches to a laptop-pad style:
+  drag moves the pointer, tap clicks, long press or two fingers right-click, and a ring shows where the pointer is.
 - **Trusted-device sign-in**: the link `vortax dashboard` prints is now a one-time link. The first browser that opens it is
   trusted (its private key stays in that browser) and the link stops working, so a second phone cannot use it. More phones
   can join only if you raise the limit (`--max-devices N`, then a fresh link from Settings) or set a password

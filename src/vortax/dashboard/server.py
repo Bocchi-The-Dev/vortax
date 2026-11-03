@@ -514,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
             raise VortaxError("changes must be an object")
         values = session.edit_settings(inst, changes)
         return {"values": values, "running": inst.running(), "saved": bool(changes),
-                "options": {"accel": list(settings.ACCEL), "nic": list(settings.NICS), "audio": list(settings.AUDIO)}}
+                "options": {"accel": list(settings.ACCEL), "nic": list(settings.NICS), "audio": list(settings.AUDIO), "cpu": list(settings.CPU_CHOICES)}}
     api_vm_edit.post = True
 
     def api_vm_live(self, body, q):

@@ -48,6 +48,7 @@ class VMPlan:
     shares: list[tuple[str, str]] = field(default_factory=list)     # (host path, 9p mount tag)
     usb: list[tuple[int, int]] = field(default_factory=list)        # (vendor id, product id)
     audio: str = "none"                                              # none | hda | ac97 | sb16 | es1370
+    cpu: str = ""                      # CPU model override (empty = the preset's or automatic)
     mttcg: bool = False                # software emulation only: run vCPUs on several host threads (experimental)
     profile: dict[str, Any] | None = None
     gpu_mode: str = "virtio"
@@ -199,7 +200,7 @@ def _cpu_for(cpu: str | None, accel: str) -> str | None:
 def _x86_modern(plan: VMPlan) -> list[str]:
     args = _common(plan)
     args += ["-accel", _tcg_accel(plan) if plan.accel == "tcg" else plan.accel,
-             "-cpu", "host" if plan.accel == "kvm" else "max"]
+             "-cpu", _cpu_for(plan.cpu, plan.accel) or ("host" if plan.accel == "kvm" else "max")]
     if plan.ram_mb:
         args += ["-m", str(plan.ram_mb)]
     if plan.bios_file and plan.firmware == "bios":
@@ -223,7 +224,7 @@ def _x86_legacy(plan: VMPlan) -> list[str]:
     use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
     args = _common(plan, _legacy_vcpus(plan, prof, use_kvm))
     args += ["-accel", "kvm" if use_kvm else _tcg_accel(plan, prof.get("tb_size_mb"))]
-    cpu = _cpu_for(prof.get("cpu"), "kvm" if use_kvm else "tcg")
+    cpu = _cpu_for(plan.cpu or prof.get("cpu"), "kvm" if use_kvm else "tcg")
     if cpu:
         args += ["-cpu", cpu]
     ram = prof["ram_mb"] if "ram_mb" in prof else plan.ram_mb
@@ -253,7 +254,7 @@ def _x86_legacy(plan: VMPlan) -> list[str]:
 
 def _aarch64(plan: VMPlan) -> list[str]:
     args = _common(plan)
-    args += ["-M", "virt", "-accel", plan.accel, "-cpu", "host" if plan.accel == "kvm" else "max"]
+    args += ["-M", "virt", "-accel", plan.accel, "-cpu", plan.cpu or ("host" if plan.accel == "kvm" else "max")]
     args += ["-m", str(plan.ram_mb or 2048)]
     args += ["-device", "virtio-gpu-pci", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet"]
     args += ["-netdev", _netdev(plan), "-device", f"{plan.nic},netdev=net0"]

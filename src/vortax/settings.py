@@ -68,6 +68,7 @@ class Settings:
     shares: list = field(default_factory=list)    # ["/host/dir[:tag]", ...] shared via 9p (Linux guests)
     usb: list = field(default_factory=list)       # ["vendor:product", ...] host USB devices to pass through
     audio: str = "none"             # none | hda | ac97 | sb16 | es1370: sound device for guests that need one
+    cpu: str = ""                   # CPU model for x86 guests (qemu64, pentium3, core2duo, max...); empty = automatic
     mttcg: bool = False             # no KVM: run vCPUs on several host threads (experimental for x86 guests on ARM)
     ssh: bool = False               # forward a free host port to guest port 22 (see `vortax ssh`)
     snapshot_on_stop: bool = False  # savevm "auto-<time>" before a graceful stop (qcow2 only)
@@ -83,6 +84,8 @@ class Settings:
         _one_of("gpu_mode", self.gpu_mode, GPU_MODES)
         _one_of("boot", self.boot, BOOT_ORDER)
         _one_of("audio", self.audio, AUDIO)
+        if self.cpu and not _CPU_RE.match(self.cpu):
+            raise VortaxError(f"invalid cpu model {self.cpu!r} (a model such as qemu64 or core2duo, optionally with ,+flag or ,-flag)")
         for dev in self.usb:
             parse_usb(dev)
         for share in self.shares:
@@ -198,7 +201,11 @@ def load_config_file() -> dict[str, Any]:
     return data
 
 
-EDITABLE = ("ram_mb", "vcpus", "disk_gb", "tunnel", "accel", "firmware", "nic", "audio", "access", "runtime",
+# Models worth offering in a menu. Anything else QEMU knows can be typed (`vortax edit --cpu Skylake-Client`).
+CPU_CHOICES = ("", "qemu64", "qemu32", "pentium3", "core2duo", "Nehalem", "Haswell", "max")
+_CPU_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}(,[+-]?[A-Za-z0-9_.-]{1,40}(=[A-Za-z0-9_.-]{1,40})?){0,8}$")
+
+EDITABLE = ("ram_mb", "vcpus", "disk_gb", "tunnel", "accel", "firmware", "nic", "audio", "cpu", "access", "runtime",
             "ssh", "snapshot_on_stop", "notify")
 
 

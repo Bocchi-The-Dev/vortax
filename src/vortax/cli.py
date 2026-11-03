@@ -62,6 +62,7 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
                    help="share a host folder with the guest over 9p (mount_tag TAG); repeatable")
     g.add_argument("--usb", action="append", metavar="VID:PID", help="pass a host USB device through; repeatable")
     g.add_argument("--audio", choices=settings.AUDIO, help="emulated sound card (default none)")
+    g.add_argument("--cpu", metavar="MODEL", help="CPU model for x86 guests, e.g. qemu64, pentium3, core2duo, max (default: automatic)")
     g.add_argument("--mttcg", action="store_true", default=None,
                    help="without KVM, let several vCPUs run on several host cores (experimental: may crash x86 guests on ARM)")
     g.add_argument("--ssh", action="store_true", default=None, help="forward a local port to the guest's SSH (22)")
@@ -839,6 +840,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--accel", choices=settings.ACCEL)
     sp.add_argument("--nic", help=f"network card model ({', '.join(settings.NICS)})")
     sp.add_argument("--audio", choices=settings.AUDIO, help="emulated sound card")
+    sp.add_argument("--cpu", metavar="MODEL", help="CPU model (qemu64, pentium3, core2duo, max...); \"\" = automatic")
     sp.add_argument("--mttcg", action=flag, default=None, help="without KVM, run vCPUs on several host cores (experimental)")
     sp.add_argument("--boot", choices=settings.BOOT_ORDER, help="disk ignores the installer ISO")
     sp.add_argument("--ssh", action=flag, default=None)

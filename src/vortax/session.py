@@ -496,7 +496,7 @@ def save_settings(inst: Instance, s: Settings) -> None:
 
 # What an existing VM may have changed after it was created. Identity (name, system, source, arch, boot mode), the
 # disk (see `vortax disk`) and passwords are deliberately not here. The disk itself is never touched by an edit.
-VM_EDITABLE = ("ram_mb", "vcpus", "accel", "nic", "audio", "mttcg", "boot", "ssh", "snapshot_on_stop", "notify",
+VM_EDITABLE = ("ram_mb", "vcpus", "accel", "nic", "audio", "cpu", "mttcg", "boot", "ssh", "snapshot_on_stop", "notify",
                "runtime", "extra_qemu_args", "virtio_iso")
 
 
@@ -579,7 +579,7 @@ def make_plan(settings: Settings, resolved: catalog.Resolved, inst: Instance, pr
         monitor_sock=str(inst.sock), virtio_iso=settings.virtio_iso,
         forwards=[parse_forward(f) for f in settings.forward] + list(extra_forwards),
         shares=[parse_share(x) for x in settings.shares], usb=[parse_usb(x) for x in settings.usb],
-        audio=settings.audio, mttcg=settings.mttcg,
+        audio=settings.audio, cpu=settings.cpu, mttcg=settings.mttcg,
         profile=profile, gpu_mode=settings.gpu_mode, extra_args=settings.extra_args(), warnings=warnings,
     )
 

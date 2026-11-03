@@ -184,6 +184,9 @@ pre.log { background: var(--inset); border: 1px solid var(--line); border-radius
 .screenwrap { background: #000; border-radius: var(--radius-sm); overflow: auto; text-align: center; max-height: 75vh; border: 1px solid var(--line); }
 #screen { max-width: 100%; height: auto; outline: none; touch-action: none; cursor: crosshair; }
 #screen:focus { box-shadow: 0 0 0 2px var(--accent); }
+.screenwrap { position: relative; }
+.vcursor { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid #fff; background: rgba(99,102,241,.55);
+  box-shadow: 0 0 0 1px #000, 0 2px 8px rgba(0,0,0,.6); pointer-events: none; z-index: 2; }
 .fs-bar { display: none; }
 .screenwrap:fullscreen, .screenwrap:-webkit-full-screen { display: grid; place-items: center; width: 100vw; height: 100vh; max-height: none; border: 0; border-radius: 0; background: #000; overflow: hidden; }
 .screenwrap:fullscreen .fs-bar, .screenwrap:-webkit-full-screen .fs-bar { display: flex; gap: 8px; position: fixed; top: calc(8px + env(safe-area-inset-top)); inset-inline-end: 8px; opacity: .55; }
