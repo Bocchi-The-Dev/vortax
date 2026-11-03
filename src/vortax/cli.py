@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, launch, paths, presets, qemu, selftest, session, settings
+from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, isobuild, launch, paths, presets, qemu, selftest, session, settings
 from .errors import VortaxError
 
 DESCRIPTION = """\
@@ -424,6 +424,22 @@ def cmd_edit(ns) -> int:
     return 0
 
 
+def cmd_driver_iso(ns) -> int:
+    src = Path(ns.folder).expanduser().resolve()
+    out = Path(ns.out).expanduser().resolve() if ns.out else src.with_name(src.name + ".iso")
+    iso = isobuild.build(src, out)
+    print(f"made {iso} ({iso.stat().st_size / 1e6:.1f} MB)")
+    inst = _instance_arg(ns)
+    if ns.attach:
+        session.edit_settings(inst, {"virtio_iso": str(iso)})
+        print(f"attached to {inst.name}: it shows up as a CD drive after the next start")
+        if inst.running():
+            print(f"{inst.name} is running: restart it (vortax stop --name {inst.name}, then vortax start --name {inst.name})")
+    else:
+        print(f"attach it with: vortax edit --name {inst.name} --driver-iso {iso}")
+    return 0
+
+
 def cmd_rm(ns) -> int:
     inst = _instance_arg(ns)
     if inst.running():
@@ -786,6 +802,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--extra-qemu-args", help="raw QEMU arguments appended verbatim")
     sp.add_argument("--driver-iso", "--virtio-iso", dest="virtio_iso",
                     help="an extra CD of drivers to attach (an ISO file); give \"\" to remove it")
+
+    sp = named(add("driver-iso", cmd_driver_iso, "make an ISO from a folder of drivers, optionally attach it to a VM"))
+    sp.add_argument("folder", help="folder whose files go on the ISO")
+    sp.add_argument("-o", "--out", help="ISO path (default: next to the folder, FOLDER.iso)")
+    sp.add_argument("--attach", action="store_true", help="also attach it to the VM given by --name")
 
     sp = named(add("rm", cmd_rm, "delete a VM's disk, media and state"))
     sp.add_argument("--yes", action="store_true")

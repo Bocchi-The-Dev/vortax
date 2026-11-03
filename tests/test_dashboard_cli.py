@@ -4,9 +4,11 @@ import contextlib
 import http.client
 import io
 import json
+import os
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from vortax import cli, session
 from vortax.dashboard import server
@@ -176,6 +178,67 @@ class Dashboard(Sandbox):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main(["edit", "--name", "ed3", "--driver-iso", ""]), 0)           # remove it again
         self.assertEqual(session.load_saved_settings(inst)["virtio_iso"], "")
+
+    def fake_iso_tool(self, name="xorriso", fail=False):
+        """A stand-in ISO builder that records its arguments and writes the -o file."""
+        bin_dir = self.tmp / "bin"; bin_dir.mkdir(exist_ok=True)
+        tool = bin_dir / name
+        tool.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$0.args"\n' + ("echo boom >&2; exit 2\n" if fail else
+                        'while [ $# -gt 0 ]; do [ "$1" = "-o" ] && { head -c 4096 /dev/zero > "$2"; }; shift; done\n'))
+        tool.chmod(0o755)
+        os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ["PATH"]
+        return tool
+
+    def test_driver_iso_builds_and_attaches(self):
+        from vortax import isobuild
+        folder = self.tmp / "Realtek Drivers"; folder.mkdir(); (folder / "setup.inf").write_text("x")
+        tool = self.fake_iso_tool()
+        out = isobuild.build(folder, self.tmp / "out" / "d.iso")
+        self.assertEqual(out.stat().st_size, 4096)
+        args = Path(str(tool) + ".args").read_text().splitlines()
+        self.assertEqual(args[:2], ["-as", "mkisofs"])
+        self.assertTrue({"-r", "-J", "-joliet-long"} <= set(args))
+        self.assertIn("REALTEK_DRIVERS", args)                                 # label is made ISO-safe
+        self.assertEqual(args[-1], str(folder))
+        self.assertFalse(list((self.tmp / "out").glob("*.part")))
+
+        src = self.tmp / "d.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed4", "source": str(src), "ram_mb": 64})
+        self.wait_job(body["job"])
+        inst = session.Instance("ed4")
+        self.addCleanup(inst.kill)
+        inst.stop(graceful=False, timeout=5, log=lambda *_: None)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc = cli.main(["driver-iso", str(folder), "--attach", "--name", "ed4"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(session.load_saved_settings(inst)["virtio_iso"], str(folder.with_name(folder.name + ".iso")))
+        self.assertIn("attached to ed4", buf.getvalue())
+
+    def test_driver_iso_errors(self):
+        from vortax import isobuild
+        from vortax.errors import MissingToolError, VortaxError
+        folder = self.tmp / "drv"; folder.mkdir()
+        empty = self.tmp / "empty"; empty.mkdir()
+        (folder / "a.inf").write_text("x")
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = str(self.tmp / "nothing")                         # no ISO tool anywhere
+        with self.assertRaises(MissingToolError) as ctx:
+            isobuild.build(folder, self.tmp / "d.iso")
+        self.assertIn("pkg install xorriso", str(ctx.exception))
+        os.environ["PATH"] = old_path
+        self.fake_iso_tool("genisoimage", fail=True)
+        os.environ["PATH"] = str(self.tmp / "bin")
+        with self.assertRaises(VortaxError) as ctx:
+            isobuild.build(folder, self.tmp / "d.iso")
+        self.assertIn("boom", str(ctx.exception))
+        self.assertFalse((self.tmp / "d.iso").exists())                         # nothing half-written is left behind
+        self.assertFalse((self.tmp / "d.iso.part").exists())
+        for bad_src, bad_out in ((empty, self.tmp / "e.iso"), (folder / "a.inf", self.tmp / "f.iso"), (folder, folder / "x.iso")):
+            with self.assertRaises(VortaxError):
+                isobuild.build(bad_src, bad_out)
+        self.assertEqual(isobuild.volume_label("my drivers (XP)!"), "MY_DRIVERS__XP")
+        self.assertEqual(isobuild.volume_label("???"), "DRIVERS")
 
     def test_job_errors_are_reported_not_raised(self):
         s, body, _ = self.call("POST", "/api/run", {"name": "bad1", "source": "/no/such/file.iso"})

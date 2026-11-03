@@ -1,6 +1,6 @@
 _vortax() {
     local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD-1]}"
-    local cmds="list profiles plan prepare start run stop kill reboot status info password snapshot export tunnel edit rm access doctor selftest check-links config secret dashboard logs preset disk ssh cp screenshot wizard"
+    local cmds="list profiles plan prepare start run stop kill reboot status info password snapshot export tunnel edit driver-iso rm access doctor selftest check-links config secret dashboard logs preset disk ssh cp screenshot wizard"
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$cmds --help --version" -- "$cur") )
         return

@@ -17,6 +17,8 @@
 - `vortax edit --name X ...` and an **Edit** button on each VM card in the dashboard change an existing VM's saved settings
   (RAM, vCPUs, sound card, network card, acceleration, `--mttcg`, ...) without recreating it. The disk is never touched and
   the change applies the next time the VM starts. Name, system, source and passwords cannot be edited this way.
+- `vortax driver-iso FOLDER [--attach --name X]` builds an ISO from a folder (needs xorriso, genisoimage or mkisofs; Joliet and Rock
+  Ridge names, so long file names work in XP) and can attach it to a VM in one step.
 - `--driver-iso` (same as `--virtio-iso`) now also works with hardware presets such as Windows XP, so you can attach an ISO of
   drivers; it takes the free slot next to the installer CD. Settable with `vortax edit`.
 - Sound card `es1370` (`--audio es1370`): Windows 2000/XP ship a driver for it, which stripped-down XP images often lack for
