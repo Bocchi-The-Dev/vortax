@@ -513,7 +513,12 @@ def edit_settings(inst: Instance, changes: dict) -> dict:
         if not iso.is_file():
             raise VortaxError(f"driver ISO not found: {iso}")
         changes = {**changes, "virtio_iso": str(iso)}
-    merged = settings_mod.resolve(environ={}, config={**saved, **changes})      # validates every value
+    combined = {**saved, **changes}
+    if "vcpus" in changes and combined.get("accel") != "kvm":
+        # Software emulation runs every vCPU on one host thread unless multi-threaded TCG is on, so asking for
+        # several vCPUs without it would silently stay at one. Keep the two settings in step.
+        combined["mttcg"] = int(combined.get("vcpus") or 1) > 1
+    merged = settings_mod.resolve(environ={}, config=combined)                  # validates every value
     if changes:
         save_settings(inst, merged)
     return {k: getattr(merged, k) for k in VM_EDITABLE}

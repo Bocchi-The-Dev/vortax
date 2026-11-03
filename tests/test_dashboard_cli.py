@@ -215,6 +215,19 @@ class Dashboard(Sandbox):
         self.assertEqual(session.load_saved_settings(inst)["virtio_iso"], str(folder.with_name(folder.name + ".iso")))
         self.assertIn("attached to ed4", buf.getvalue())
 
+    def test_more_vcpus_turns_on_multithreaded_tcg(self):
+        src = self.tmp / "m.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed5", "source": str(src), "ram_mb": 64, "accel": "tcg"})
+        self.wait_job(body["job"])
+        inst = session.Instance("ed5")
+        self.addCleanup(inst.kill)
+        inst.stop(graceful=False, timeout=5, log=lambda *_: None)
+        got = session.edit_settings(inst, {"vcpus": 4, "mttcg": False})          # the dashboard sends mttcg off
+        self.assertTrue(got["mttcg"])
+        self.assertEqual(got["vcpus"], 4)
+        got = session.edit_settings(inst, {"vcpus": 1})
+        self.assertFalse(got["mttcg"])
+
     def test_driver_iso_errors(self):
         from vortax import isobuild
         from vortax.errors import MissingToolError, VortaxError
