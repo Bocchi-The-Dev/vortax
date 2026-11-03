@@ -144,9 +144,10 @@ def _netdev(plan: VMPlan) -> str:
     return spec
 
 
-def _smp(count: int, one_socket: bool = False) -> str:
-    """-smp value. One socket with several cores lets editions limited to one physical CPU (XP Home) use them all."""
-    return f"{count},sockets=1,cores={count}" if one_socket and count > 1 else str(count)
+def _smp(count: int) -> str:
+    """-smp value. One socket with several cores, never several sockets: editions limited by physical CPUs
+    (XP Home sees one socket, XP Pro two) then use every vCPU."""
+    return f"{count},sockets=1,cores={count},threads=1" if count > 1 else "1"
 
 
 def _tcg_accel(plan: VMPlan, tb_size_mb: int | None = None) -> str:
@@ -163,11 +164,11 @@ def _legacy_vcpus(plan: VMPlan, prof: dict, use_kvm: bool) -> int:
     return plan.vcpus if (use_kvm or plan.mttcg) else (prof.get("vcpus_tcg") or plan.vcpus)
 
 
-def _common(plan: VMPlan, vcpus: int | None = None, one_socket: bool = False) -> list[str]:
+def _common(plan: VMPlan, vcpus: int | None = None) -> list[str]:
     vnc = f"{plan.vnc_bind}:{plan.vnc_display}"
     if plan.vnc_password:
         vnc += ",password=on"
-    args = ["-name", plan.name, "-smp", _smp(vcpus or plan.vcpus, one_socket), "-display", "none"]
+    args = ["-name", plan.name, "-smp", _smp(vcpus or plan.vcpus), "-display", "none"]
     if plan.audio != "none":
         # Defined ahead of -vnc so the VNC server can stream the guest's sound to the dashboard console.
         args += ["-audiodev", "none,id=snd0"]
@@ -220,7 +221,7 @@ def _driver_cd(plan: VMPlan) -> list[str]:
 def _x86_legacy(plan: VMPlan) -> list[str]:
     prof = plan.profile or {}
     use_kvm = plan.accel == "kvm" and prof.get("kvm", True)
-    args = _common(plan, _legacy_vcpus(plan, prof, use_kvm), bool(prof.get("smp_one_socket")))
+    args = _common(plan, _legacy_vcpus(plan, prof, use_kvm))
     args += ["-accel", "kvm" if use_kvm else _tcg_accel(plan, prof.get("tb_size_mb"))]
     cpu = _cpu_for(prof.get("cpu"), "kvm" if use_kvm else "tcg")
     if cpu:

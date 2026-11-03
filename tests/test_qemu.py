@@ -103,8 +103,8 @@ class Legacy(unittest.TestCase):
         self.assertEqual(flag(a, "-smp"), "1")                        # TCG runs every vCPU on one host thread
         k = qemu.build_command(plan(profile=xp, accel="kvm", vcpus=4))
         self.assertEqual(flag(k, "-accel"), "kvm")                    # the cache cap is a TCG-only option
-        self.assertEqual(flag(k, "-smp"), "4,sockets=1,cores=4")      # KVM keeps the user's count; one socket so XP Home uses all
-        self.assertEqual(flag(qemu.build_command(plan(profile=self.P["win98"], accel="tcg", vcpus=2)), "-smp"), "2")
+        self.assertEqual(flag(k, "-smp"), "4,sockets=1,cores=4,threads=1")      # KVM keeps the user's count; one socket so XP Home uses all
+        self.assertEqual(flag(qemu.build_command(plan(profile=self.P["win98"], accel="tcg", vcpus=2)), "-smp"), "2,sockets=1,cores=2,threads=1")
 
     def test_status_shows_what_really_runs(self):
         from vortax import catalog
@@ -125,7 +125,7 @@ class Legacy(unittest.TestCase):
         xp = catalog.load_profiles()["winxp"]
         a = qemu.build_command(plan(profile=xp, accel="tcg", vcpus=4, mttcg=True))
         self.assertEqual(flag(a, "-accel"), "tcg,tb-size=256,thread=multi")
-        self.assertEqual(flag(a, "-smp"), "4,sockets=1,cores=4")
+        self.assertEqual(flag(a, "-smp"), "4,sockets=1,cores=4,threads=1")
         self.assertEqual(qemu.effective_resources(plan(profile=xp, accel="tcg", vcpus=4, mttcg=True)), (512, 4))
         off = qemu.build_command(plan(profile=xp, accel="tcg", vcpus=4))      # without the switch: still one vCPU
         self.assertEqual(flag(off, "-smp"), "1")
@@ -133,7 +133,7 @@ class Legacy(unittest.TestCase):
         self.assertEqual(flag(qemu.build_command(plan(accel="tcg", mttcg=True)), "-accel"), "tcg,thread=multi")
         self.assertEqual(flag(qemu.build_command(plan(accel="tcg")), "-accel"), "tcg")
         self.assertEqual(flag(qemu.build_command(plan(accel="kvm", mttcg=True)), "-accel"), "kvm")
-        self.assertEqual(flag(qemu.build_command(plan(vcpus=2)), "-smp"), "2")  # no preset: plain count
+        self.assertEqual(flag(qemu.build_command(plan(vcpus=2)), "-smp"), "2,sockets=1,cores=2,threads=1")  # one socket without a preset too
 
     def test_driver_cd_works_with_the_xp_preset_and_next_to_the_installer(self):
         from vortax import catalog

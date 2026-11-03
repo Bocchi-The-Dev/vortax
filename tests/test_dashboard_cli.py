@@ -131,7 +131,7 @@ class Dashboard(Sandbox):
         self.assertEqual(self.wait_job(body["job"])["status"], "done")
         cmd = inst.state()["cmd"]
         self.assertIn("ES1370,audiodev=snd0", cmd)
-        self.assertEqual(cmd[cmd.index("-smp") + 1], "3")
+        self.assertEqual(cmd[cmd.index("-smp") + 1], "3,sockets=1,cores=3,threads=1")
         self.assertEqual(cmd[cmd.index("-m") + 1], "64")                              # untouched settings stay
 
         self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed1", "changes": {"audio": "nope"}})[0], 400)
