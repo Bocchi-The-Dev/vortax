@@ -135,6 +135,16 @@ class Legacy(unittest.TestCase):
         self.assertEqual(flag(qemu.build_command(plan(accel="kvm", mttcg=True)), "-accel"), "kvm")
         self.assertEqual(flag(qemu.build_command(plan(vcpus=2)), "-smp"), "2")  # no preset: plain count
 
+    def test_driver_cd_works_with_the_xp_preset_and_next_to_the_installer(self):
+        from vortax import catalog
+        xp = catalog.load_profiles()["winxp"]
+        a = qemu.build_command(plan(profile=xp, accel="tcg", virtio_iso="/d/drivers.iso", iso_path="/m/xp.iso"))
+        self.assertIn("file=/d/drivers.iso,media=cdrom,readonly=on,if=none,id=cd1", a)
+        self.assertIn("ide-cd,bus=ide.1,drive=cd1", a)
+        self.assertEqual(flag(a, "-cdrom"), "/m/xp.iso")                    # the installer CD is still there
+        self.assertNotIn("ide-cd,bus=ide.1,drive=cd1", qemu.build_command(plan(profile=xp, accel="tcg")))
+        self.assertIn("ide-cd,bus=ide.1,drive=cd1", qemu.build_command(plan(virtio_iso="/d/drivers.iso")))   # modern path as before
+
     def test_es1370_sound_card(self):
         a = qemu.build_command(plan(audio="es1370"))
         self.assertIn("ES1370,audiodev=snd0", a)

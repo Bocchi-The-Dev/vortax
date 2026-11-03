@@ -55,7 +55,7 @@ def _add_run_options(p: argparse.ArgumentParser) -> None:
     g.add_argument("--gpu-mode", choices=settings.GPU_MODES, help="batocera profile: display device to try")
     g.add_argument("--floppy-url", help="floppy image (.ima) URL or path for retro profiles")
     g.add_argument("--bios-url", help="custom SeaBIOS build, BIOS mode only")
-    g.add_argument("--virtio-iso", help="path to virtio-win.iso to attach (Windows guests)")
+    g.add_argument("--virtio-iso", "--driver-iso", help="an extra CD to attach: virtio-win.iso or an ISO of drivers you made")
     g.add_argument("--forward", action="append", metavar="[tcp|udp:]HOST:GUEST",
                    help="forward a host port (bound to 127.0.0.1) to the guest; repeatable")
     g.add_argument("--share", action="append", metavar="PATH[:TAG]",
@@ -784,6 +784,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--notify", action=flag, default=None)
     sp.add_argument("--runtime", type=int, help="minutes before the VM is stopped (0 = never)")
     sp.add_argument("--extra-qemu-args", help="raw QEMU arguments appended verbatim")
+    sp.add_argument("--driver-iso", "--virtio-iso", dest="virtio_iso",
+                    help="an extra CD of drivers to attach (an ISO file); give \"\" to remove it")
 
     sp = named(add("rm", cmd_rm, "delete a VM's disk, media and state"))
     sp.add_argument("--yes", action="store_true")

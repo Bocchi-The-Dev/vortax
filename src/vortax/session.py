@@ -497,7 +497,7 @@ def save_settings(inst: Instance, s: Settings) -> None:
 # What an existing VM may have changed after it was created. Identity (name, system, source, arch, boot mode), the
 # disk (see `vortax disk`) and passwords are deliberately not here. The disk itself is never touched by an edit.
 VM_EDITABLE = ("ram_mb", "vcpus", "accel", "nic", "audio", "mttcg", "boot", "ssh", "snapshot_on_stop", "notify",
-               "runtime", "extra_qemu_args")
+               "runtime", "extra_qemu_args", "virtio_iso")
 
 
 def edit_settings(inst: Instance, changes: dict) -> dict:
@@ -508,6 +508,11 @@ def edit_settings(inst: Instance, changes: dict) -> dict:
     saved = load_saved_settings(inst)
     if not saved:
         raise VortaxError(f"{inst.name} has no saved launch settings: start it once first")
+    if changes.get("virtio_iso"):
+        iso = Path(os.path.expanduser(str(changes["virtio_iso"]))).resolve()
+        if not iso.is_file():
+            raise VortaxError(f"driver ISO not found: {iso}")
+        changes = {**changes, "virtio_iso": str(iso)}
     merged = settings_mod.resolve(environ={}, config={**saved, **changes})      # validates every value
     if changes:
         save_settings(inst, merged)

@@ -161,6 +161,22 @@ class Dashboard(Sandbox):
             self.assertNotEqual(cli.main(["edit", "--name", "ed2", "--vcpus", "0"]), 0)           # validated
         self.assertEqual(session.load_saved_settings(inst)["vcpus"], 4)                            # and not saved
 
+    def test_edit_driver_iso(self):
+        src = self.tmp / "d.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed3", "source": str(src), "ram_mb": 64})
+        self.wait_job(body["job"])
+        inst = session.Instance("ed3")
+        self.addCleanup(inst.kill)
+        inst.stop(graceful=False, timeout=5, log=lambda *_: None)
+        iso = self.tmp / "drivers.iso"; iso.write_bytes(b"x" * 2048)
+        s, out, _ = self.call("POST", "/api/vm/edit", {"name": "ed3", "changes": {"virtio_iso": str(iso)}})
+        self.assertEqual((s, out["values"]["virtio_iso"]), (200, str(iso.resolve())))
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed3", "changes": {"virtio_iso": str(self.tmp / "nope.iso")}})[0], 400)
+        self.assertEqual(session.load_saved_settings(inst)["virtio_iso"], str(iso.resolve()))      # a bad path is not saved
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["edit", "--name", "ed3", "--driver-iso", ""]), 0)           # remove it again
+        self.assertEqual(session.load_saved_settings(inst)["virtio_iso"], "")
+
     def test_job_errors_are_reported_not_raised(self):
         s, body, _ = self.call("POST", "/api/run", {"name": "bad1", "source": "/no/such/file.iso"})
         job = self.wait_job(body["job"])

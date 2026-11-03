@@ -205,10 +205,16 @@ def _x86_modern(plan: VMPlan) -> list[str]:
         args += ["-bios", plan.bios_file]
     args += ["-netdev", _netdev(plan), "-device", f"{plan.nic},netdev=net0"]
     args += ["-device", "usb-ehci,id=ehci", "-device", "usb-tablet,bus=ehci.0"]
-    if plan.virtio_iso:
-        args += ["-drive", f"file={plan.virtio_iso},media=cdrom,readonly=on,if=none,id=cd1",
-                 "-device", "ide-cd,bus=ide.1,drive=cd1"]
-    return args
+    return args + _driver_cd(plan)
+
+
+def _driver_cd(plan: VMPlan) -> list[str]:
+    """An extra CD with drivers (virtio-win, or files you put on an ISO). It takes the next free slot on the second
+    IDE bus, so it can sit next to the installer CD."""
+    if not plan.virtio_iso:
+        return []
+    return ["-drive", f"file={plan.virtio_iso},media=cdrom,readonly=on,if=none,id=cd1",
+            "-device", "ide-cd,bus=ide.1,drive=cd1"]
 
 
 def _x86_legacy(plan: VMPlan) -> list[str]:
@@ -241,7 +247,7 @@ def _x86_legacy(plan: VMPlan) -> list[str]:
     args += list(prof.get("extra", []))
     if plan.floppy_path:
         args += ["-fda", plan.floppy_path]
-    return args
+    return args + _driver_cd(plan)
 
 
 def _aarch64(plan: VMPlan) -> list[str]:
