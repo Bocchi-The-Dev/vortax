@@ -368,15 +368,14 @@ async function snapshots(name) {
 /* --- storage --- */
 async function renderStorage() {
   const s = await api("storage"), root = h("div", { class: "card" });
-  root.append(h("h2", { text: s.data_dir }));
+  root.append(h("h2", { class: "path", text: s.data_dir }));
   if (!s.items.length) { root.append(h("div", { class: "empty", text: "Nothing stored yet." })); return root; }
-  const tb = h("tbody");
+  const list = h("div", { class: "devs" });
   for (const it of s.items) {
-    tb.append(h("tr", {}, h("td", { text: it.kind }), h("td", { class: "mono", text: it.name }), h("td", { class: "num", text: fmtBytes(it.size) }),
-      h("td", {}, h("button", { class: "btn sm bad", text: "Delete", onclick: () => confirmThen(`Delete ${it.name}? This cannot be undone.`, async () => { await act(() => api("storage/delete", { kind: it.kind, name: it.name }), "Deleted"); render(); }) }))));
+    list.append(h("div", { class: "dev" }, h("div", {}, h("b", { class: "mono", text: it.name }), h("div", { class: "sub", text: `${it.kind} · ${fmtBytes(it.size)}` })),
+      h("button", { class: "btn sm bad", text: "Delete", onclick: () => confirmThen(`Delete ${it.name}? This cannot be undone.`, async () => { await act(() => api("storage/delete", { kind: it.kind, name: it.name }), "Deleted"); render(); }) })));
   }
-  root.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "Type" }), h("th", { text: "File" }), h("th", { text: "Size" }), h("th"))), tb),
-    h("p", { class: "note", text: `${fmtBytes(s.stats.free)} free of ${fmtBytes(s.stats.total)}` }));
+  root.append(list, h("p", { class: "note", text: `${fmtBytes(s.stats.free)} free of ${fmtBytes(s.stats.total)}` }));
   return root;
 }
 
@@ -413,7 +412,7 @@ function renderConsole() {
   const connect = () => {
     stopConsole(); status.textContent = "connecting...";
     rfb = new RFB(canvas, `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/vnc?name=${encodeURIComponent(sel.value)}`, ["vortax.v1", "tok." + token], {
-      onready: (name, w, hh) => { status.textContent = `${name || sel.value} · ${w}×${hh}`; canvas.focus(); },
+      onready: (name, w, hh) => { status.textContent = `${name || sel.value} · ${w}×${hh}`; canvas.focus(); fitScreen(); },
       onclose: () => { status.textContent = "disconnected"; }, onerror: () => { status.textContent = "connection failed"; } });
   };
   sel.addEventListener("change", () => { consoleName = sel.value; connect(); });
@@ -455,12 +454,40 @@ function renderConsole() {
       if (!rfb.audioReady) return toast("This VM has no sound: start it with --audio hda (or ac97, sb16)", true);
       if (!rfb.enableAudio(new QemuAudio())) return toast("The browser blocked audio", true);
       e.target.setAttribute("aria-pressed", "true"); } }),
-    h("button", { class: "btn sm", text: "Fullscreen", onclick: () => canvas.requestFullscreen && canvas.requestFullscreen() }),
+    h("button", { class: "btn sm", text: "Fullscreen", onclick: () => toggleFullscreen(wrap) }),
     h("button", { class: "btn sm bad", text: "Disconnect", onclick: () => { stopConsole(); status.textContent = "disconnected"; } }));
-  root.append(h("div", { class: "card console" }, toolbar, h("div", { class: "screenwrap" }, canvas), typer));
+  const fsBar = h("div", { class: "fs-bar" },
+    h("button", { class: "btn sm", text: "Keyboard", onclick: () => typer.focus() }),
+    h("button", { class: "btn sm", text: "Ctrl+Alt+Del", onclick: () => rfb && rfb.combo([0xffe3, 0xffe9, 0xffff]) }),
+    h("button", { class: "btn sm bad", text: "Exit fullscreen", onclick: () => toggleFullscreen(wrap) }));
+  const wrap = h("div", { class: "screenwrap", id: "screenwrap" }, canvas, typer, fsBar);
+  root.append(h("div", { class: "card console" }, toolbar, wrap));
+  fitScreen();
   setTimeout(connect, 0);
   return root;
 }
+/* Fullscreen covers the whole screen area (not just the canvas), so the typing box and the on-screen buttons stay usable on a phone.
+   The picture is scaled to fit by hand: the pointer maths reads the canvas box, so it must match what is drawn. */
+function toggleFullscreen(wrap) {
+  const cur = document.fullscreenElement || document.webkitFullscreenElement;
+  if (cur) return (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  const req = wrap.requestFullscreen || wrap.webkitRequestFullscreen;
+  if (!req) return toast("This browser cannot go fullscreen", true);
+  Promise.resolve(req.call(wrap)).catch(() => toast("Fullscreen was blocked by the browser", true));
+}
+function fitScreen() {
+  const canvas = $("#screen"), wrap = $("#screenwrap");
+  if (!canvas || !wrap) return;
+  const full = (document.fullscreenElement || document.webkitFullscreenElement) === wrap;
+  if (full && canvas.width && canvas.height) {
+    const s = Math.min(innerWidth / canvas.width, innerHeight / canvas.height);
+    canvas.style.width = Math.floor(canvas.width * s) + "px"; canvas.style.height = Math.floor(canvas.height * s) + "px"; canvas.style.maxWidth = "none";
+    canvas.focus();
+  } else { canvas.style.width = canvas.style.height = canvas.style.maxWidth = ""; }
+}
+for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) document.addEventListener(ev, fitScreen);
+window.addEventListener("resize", fitScreen);
+
 function pasteForm(send) {
   const ta = h("textarea", { id: "f_paste", rows: "5", spellcheck: "false" });
   openModal(h("h3", { text: "Type text" }), h("p", { class: "sub", text: "Sent to the guest as key presses, one character at a time." }), ta,
