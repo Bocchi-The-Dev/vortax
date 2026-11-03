@@ -39,6 +39,10 @@ def build(src: Path, out: Path, label: str = "") -> Path:
         raise VortaxError(f"{src} has no files to put on the ISO")
     if out == src or src in out.parents:
         raise VortaxError("the ISO cannot be written inside the folder it is built from")
+    locked = [p for p in src.rglob("*") if p.is_file() and not os.access(p, os.R_OK)]
+    if locked:
+        names = ", ".join(p.name for p in locked[:3])
+        raise VortaxError(f"cannot read {names} (no read permission); fix with: chmod -R u+rwX {src}")
     tool = find_tool()
     if tool is None:
         raise MissingToolError("xorriso (or genisoimage / mkisofs)", INSTALL_HINT)

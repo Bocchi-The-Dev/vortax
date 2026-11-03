@@ -237,6 +237,12 @@ class Dashboard(Sandbox):
         for bad_src, bad_out in ((empty, self.tmp / "e.iso"), (folder / "a.inf", self.tmp / "f.iso"), (folder, folder / "x.iso")):
             with self.assertRaises(VortaxError):
                 isobuild.build(bad_src, bad_out)
+        if os.geteuid() != 0:                                                   # root reads everything
+            (folder / "a.inf").chmod(0)
+            with self.assertRaises(VortaxError) as ctx:
+                isobuild.build(folder, self.tmp / "g.iso")
+            self.assertIn("chmod", str(ctx.exception))
+            (folder / "a.inf").chmod(0o644)
         self.assertEqual(isobuild.volume_label("my drivers (XP)!"), "MY_DRIVERS__XP")
         self.assertEqual(isobuild.volume_label("???"), "DRIVERS")
 
