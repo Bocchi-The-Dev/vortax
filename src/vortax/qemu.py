@@ -169,10 +169,10 @@ def _common(plan: VMPlan, vcpus: int | None = None) -> list[str]:
     if plan.vnc_password:
         vnc += ",password=on"
     args = ["-name", plan.name, "-smp", _smp(vcpus or plan.vcpus), "-display", "none"]
-    if plan.audio != "none":
-        # Defined ahead of -vnc so the VNC server can stream the guest's sound to the dashboard console.
-        args += ["-audiodev", "none,id=snd0"]
-        vnc += ",audiodev=snd0"
+    # Always defined, ahead of -vnc, so the VNC server can stream sound to the dashboard console and a sound
+    # card can be plugged into the running VM later (`vortax live --audio ac97`).
+    args += ["-audiodev", "none,id=snd0"]
+    vnc += ",audiodev=snd0"
     args += ["-vnc", vnc]
     if plan.monitor_sock:
         args += ["-monitor", f"unix:{plan.monitor_sock},server=on,wait=off"]

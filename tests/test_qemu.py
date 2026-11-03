@@ -48,12 +48,12 @@ class ModernX86(unittest.TestCase):
 
     def test_vnc_is_loopback_with_password_and_monitor_is_a_unix_socket(self):
         a = qemu.build_command(plan())
-        self.assertEqual(flag(a, "-vnc"), "127.0.0.1:0,password=on")
+        self.assertEqual(flag(a, "-vnc"), "127.0.0.1:0,password=on,audiodev=snd0")
         self.assertTrue(flag(a, "-monitor").startswith("unix:/r/m.sock"))
         self.assertNotIn("tcp:", " ".join(a))
 
     def test_no_password_drops_the_option(self):
-        self.assertEqual(flag(qemu.build_command(plan(vnc_password=False)), "-vnc"), "127.0.0.1:0")
+        self.assertEqual(flag(qemu.build_command(plan(vnc_password=False)), "-vnc"), "127.0.0.1:0,audiodev=snd0")
 
     def test_forwards_are_bound_to_loopback(self):
         a = qemu.build_command(plan(forwards=[("tcp", 2222, 22)]))

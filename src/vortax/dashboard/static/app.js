@@ -92,7 +92,7 @@ async function api(path, body) {
   let res;
   try { res = await fetch("/api/" + path, opts); } catch (e) { setBanner("Cannot reach the dashboard server.", true); throw e; }
   const json = await res.json().catch(() => ({}));
-  if (res.status === 401) { setBanner("Wrong or missing token. Open the full URL that `vortax dashboard` printed (it ends with #token=...).", true); throw new Error("auth"); }
+  if (res.status === 401) { forgetDevice(); showGate("This browser is not trusted (any more)."); throw new Error("auth"); }
   if (!res.ok) throw new Error(json.error || res.statusText);
   setBanner("");
   return json;
@@ -478,6 +478,7 @@ async function renderSettings() {
     if (p === "granted") { store.set("notify", "1"); toast(T("Saved")); } else toast(T("Blocked in browser settings"), true);
   } });
   root.append(h("div", { class: "card" }, h("h2", { text: "This browser" }), h("div", { class: "form" }, field("Theme", themeSel), field("Language", langSel), field("Notifications", noteBtn))));
+  root.append(await devicesCard());
   const names = Object.keys(presets);
   const pc = h("div", { class: "card" }, h("h2", { text: "Presets" }));
   if (!names.length) pc.append(h("p", { class: "sub", text: "Save one from the launch form (\"Save as preset\") or with `vortax preset save`." }));
@@ -486,6 +487,42 @@ async function renderSettings() {
     h("button", { class: "btn sm bad", text: "Delete", onclick: () => confirmThen(`Delete preset ${n}?`, async () => { await act(() => api("presets/delete", { name: n })); render(); }) })));
   root.append(pc);
   return root;
+}
+
+/* --- trusted devices (Settings) --- */
+const when = (t) => new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+async function devicesCard() {
+  const r = await api("devices"), card = h("div", { class: "card" }, h("h2", { text: "Trusted devices" }));
+  card.append(h("p", { class: "sub", text: "Only browsers listed here can open this dashboard. A one-time link trusts the first browser that opens it and then stops working." }));
+  const list = h("div", { class: "devs" });
+  for (const d of r.devices) {
+    list.append(h("div", { class: "dev" }, h("div", {}, h("b", { text: d.label }), d.id === r.current ? h("span", { class: "tag me", text: "this device" }) : null,
+      h("div", { class: "sub", text: `${d.how === "password" ? "password" : "link"} · last seen ${when(d.last_seen)}` })),
+      h("button", { class: "btn sm bad", text: "Remove", onclick: () => confirmThen(`Remove ${d.label}? It must sign in again.`, async () => { await act(() => api("devices/remove", { id: d.id }), "Removed"); if (d.id === r.current) { forgetDevice(); location.reload(); } else render(); }) })));
+  }
+  if (!r.devices.length) list.append(h("div", { class: "sub", text: "No trusted browsers yet (you are using the owner token)." }));
+  card.append(list);
+  const limit = h("input", { id: "d_max", type: "number", min: "1", max: "50", value: String(r.max_devices) });
+  card.append(h("div", { class: "form" }, field("Device limit for one-time links", limit)),
+    h("div", { class: "row" },
+      h("button", { class: "btn", text: "Save limit", onclick: async () => { if (await act(() => api("devices/limit", { max_devices: Number(limit.value) }), "Saved")) render(); } }),
+      h("button", { class: "btn primary", text: "New one-time link", onclick: async () => {
+        const c = await act(() => api("devices/invite", {}));
+        if (!c) return;
+        const url = `${location.origin}/#claim=${c.code}`, box = h("input", { readonly: true, value: url, id: "d_link" });
+        openModal(h("h3", { text: "One-time link" }), h("p", { class: "sub", text: "Open it on the new phone. It works once, for one hour, and then that phone is trusted." }), box,
+          h("div", { class: "row" }, h("button", { class: "btn primary", text: "Copy", onclick: async () => { box.select(); try { await navigator.clipboard.writeText(url); toast("Copied"); } catch (e) { toast("Select the text and copy it", true); } } }),
+            h("button", { class: "btn", text: "Close", onclick: closeModal })));
+      } })));
+  card.append(h("h2", { class: "gap", text: "Password sign-in" }),
+    h("p", { class: "sub", text: r.password ? "On: any browser that knows the password can sign in and becomes trusted." : "Off: browsers without a one-time link cannot sign in." }),
+    h("div", { class: "row" }, h("button", { class: "btn", text: r.password ? "Change password" : "Set a password", onclick: () => {
+      const pw = h("input", { type: "password", id: "d_pw", autocomplete: "new-password" });
+      openModal(h("h3", { text: "Dashboard password" }), h("p", { class: "sub", text: "At least 6 characters. Wrong guesses are slowed down." }), field("Password", pw),
+        h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save", onclick: async () => { if (await act(() => api("devices/password", { password: pw.value }), "Saved")) { closeModal(); render(); } } }),
+          h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
+    } }), r.password ? h("button", { class: "btn bad", text: "Turn off", onclick: async () => { await act(() => api("devices/password", { clear: true }), "Saved"); render(); } }) : null));
+  return card;
 }
 
 /* --- health --- */
@@ -538,12 +575,50 @@ async function footer() {
     $("#foot").replaceChildren(link, document.createTextNode(` · vortax ${a.version}`)); translateTree($("#foot"));
   } catch (e) { /* the banner already explains auth problems */ }
 }
-function boot() {
+/* ---------- sign-in: one-time link, password, or the owner token for scripts ---------- */
+function forgetDevice() { token = ""; store.set("device", ""); try { sessionStorage.removeItem("vortax-token"); } catch (e) { /* ignore */ } }
+function deviceLabel() {
+  const u = navigator.userAgent, os = /Android/.test(u) ? "Android" : /iPhone|iPad/.test(u) ? "iOS" : /Windows/.test(u) ? "Windows" : /Mac/.test(u) ? "Mac" : /Linux/.test(u) ? "Linux" : "device";
+  const br = /Edg\//.test(u) ? "Edge" : /Firefox/.test(u) ? "Firefox" : /Chrome/.test(u) ? "Chrome" : /Safari/.test(u) ? "Safari" : "browser";
+  return `${os} ${br}`;
+}
+async function authPost(name, body) {
+  const res = await fetch("/api/auth/" + name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+async function showGate(msg) {
+  stopConsole(); clearInterval(timer);
+  document.body.classList.add("gate");
+  let info = { password: false };
+  try { info = await (await fetch("/api/auth/info")).json(); } catch (e) { /* offline */ }
+  const card = h("div", { class: "card gate-card" }, h("div", { class: "gate-logo" }), h("h3", { text: "Vortax" }),
+    h("p", { class: "sub", text: msg || "This browser is not trusted yet." }));
+  if (info.password) {
+    const pw = h("input", { type: "password", id: "g_pw", placeholder: "Password", autocomplete: "current-password" }), err = h("div", { class: "fail", text: "" });
+    const go1 = async () => { try { const r = await authPost("login", { password: pw.value, label: deviceLabel() }); store.set("device", r.key); location.replace(location.pathname); } catch (e) { err.textContent = e.message; } };
+    pw.addEventListener("keydown", (e) => { if (e.key === "Enter") go1(); });
+    card.append(field("Password", pw), err, h("button", { class: "btn primary block", text: "Sign in", onclick: go1 }));
+  } else {
+    card.append(h("p", { class: "note", text: "Open the one-time link that `vortax dashboard` printed, or ask the owner to turn on a password or raise the device limit." }));
+  }
+  $("#view").replaceChildren(card); $("#title").textContent = ""; $("#subtitle").textContent = ""; $("#clock").textContent = ""; $("#tabs").replaceChildren();
+  translateTree($("#view"));
+}
+async function boot() {
   applyPrefs();
-  const m = location.hash.match(/token=([A-Za-z0-9_-]+)/);
-  try { if (m) sessionStorage.setItem("vortax-token", m[1]); token = sessionStorage.getItem("vortax-token") || ""; } catch (e) { token = m ? m[1] : ""; }
-  if (m) history.replaceState(null, "", location.pathname);
-  if (!token) { setBanner("No token. Open the URL that `vortax dashboard` printed (it ends with #token=...).", true); return; }
+  const hash = location.hash, legacy = hash.match(/token=([A-Za-z0-9_-]+)/), claim = hash.match(/claim=([A-Za-z0-9_-]+)/);
+  if (legacy || claim) history.replaceState(null, "", location.pathname);
+  token = store.get("device", "");
+  if (!token) { try { token = sessionStorage.getItem("vortax-token") || ""; } catch (e) { token = ""; } }
+  if (legacy) { token = legacy[1]; try { sessionStorage.setItem("vortax-token", token); } catch (e) { /* ignore */ } }
+  let gateMsg = "";
+  if (claim) {
+    try { const r = await authPost("claim", { code: claim[1], label: deviceLabel() }); token = r.key; store.set("device", token); }
+    catch (e) { gateMsg = e.message; token = ""; }
+  }
+  if (!token) return showGate(gateMsg);
   $("#ver").textContent = "v3";
   render().then(() => { $("#ver").textContent = data ? "v" + data.version : ""; });
   footer();

@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, isobuild, launch, paths, presets, qemu, selftest, session, settings
+from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, isobuild, launch, live, paths, presets, qemu, selftest, session, settings
 from .errors import VortaxError
 
 DESCRIPTION = """\
@@ -424,6 +424,24 @@ def cmd_edit(ns) -> int:
     return 0
 
 
+def cmd_live(ns) -> int:
+    inst = _instance_arg(ns)
+    todo = []
+    if ns.cd:
+        todo.append(("cd_attach", ns.cd))
+    if ns.eject:
+        todo.append(("cd_eject", ""))
+    if ns.audio:
+        todo.append(("audio_add", ns.audio))
+    if ns.no_audio:
+        todo.append(("audio_remove", ""))
+    if not todo:
+        raise VortaxError("give one of --cd ISO, --eject, --audio ac97|es1370|hda, --no-audio")
+    for action, value in todo:
+        print(live.apply(inst, action, value))
+    return 0
+
+
 def cmd_driver_iso(ns) -> int:
     src = Path(ns.folder).expanduser().resolve()
     out = Path(ns.out).expanduser().resolve() if ns.out else src.with_name(src.name + ".iso")
@@ -710,7 +728,35 @@ def cmd_wizard(ns) -> int:
 
 def cmd_dashboard(ns) -> int:
     from .dashboard import server
-    return server.serve(ns.host, ns.port, open_browser=ns.open)
+    from .dashboard.trust import Trust
+    trust = Trust()
+    if ns.reset_devices:
+        trust.reset()
+        print("all trusted devices removed")
+    if ns.revoke:
+        trust.remove(ns.revoke)
+        print(f"removed device {ns.revoke}")
+    if ns.max_devices is not None:
+        trust.set_max(ns.max_devices)
+        print(f"device limit is now {trust.max_devices}")
+    if ns.no_password:
+        trust.clear_password()
+        print("password sign-in turned off")
+    if ns.set_password:
+        import getpass
+        first = getpass.getpass("new dashboard password (6+ characters): ")
+        if first != getpass.getpass("again: "):
+            raise VortaxError("the two passwords differ")
+        trust.set_password(first)
+        print("password sign-in turned on")
+    if ns.devices:
+        import time as _time
+        rows = trust.devices()
+        print(f"{len(rows)} trusted device(s), limit {trust.max_devices}, password {'on' if trust.has_password else 'off'}")
+        for d in rows:
+            print(f"  {d['id']}  {d['label']:<28} via {d['how']:<8} last seen {_time.strftime('%Y-%m-%d %H:%M', _time.localtime(d['last_seen']))}")
+        return 0
+    return server.serve(ns.host, ns.port, open_browser=ns.open, trust=trust)
 
 
 # ---------------------------------------------------------------- parser
@@ -868,10 +914,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("secret", cmd_secret, "store a tunnel token in ~/.config/vortax/secrets.json (mode 600)")
     sp.add_argument("name", choices=["tailscale_authkey", "ngrok_authtoken"])
 
+    sp = add("live", cmd_live, "change a running VM: swap a CD, plug in or remove a sound card (no restart)")
+    sp.add_argument("--name", help="VM name (default: vortax)")
+    sp.add_argument("--cd", metavar="ISO", help="put this ISO in the VM's CD drive (adds a USB CD drive if it has none)")
+    sp.add_argument("--eject", action="store_true", help="take the disc out")
+    sp.add_argument("--audio", choices=["ac97", "es1370", "hda"], help="plug in a sound card")
+    sp.add_argument("--no-audio", action="store_true", help="remove the sound card added with --audio")
+
     sp = add("dashboard", cmd_dashboard, "serve the web dashboard")
     sp.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1)")
     sp.add_argument("--port", type=int, default=8765)
     sp.add_argument("--open", action="store_true", help="open a browser when it starts")
+    sp.add_argument("--max-devices", type=int, metavar="N", help="how many browsers may be trusted through one-time links (default 1)")
+    sp.add_argument("--set-password", action="store_true", help="let any browser sign in with a password (asked for, not typed on the command line)")
+    sp.add_argument("--no-password", action="store_true", help="turn password sign-in off")
+    sp.add_argument("--devices", action="store_true", help="list trusted devices and exit")
+    sp.add_argument("--revoke", metavar="ID", help="remove one trusted device (ids come from --devices)")
+    sp.add_argument("--reset-devices", action="store_true", help="remove every trusted device")
     return p
 
 

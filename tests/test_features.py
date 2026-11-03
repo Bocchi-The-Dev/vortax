@@ -46,7 +46,8 @@ class Builder(unittest.TestCase):
         self.assertEqual(a[a.index("-vnc") + 1], "127.0.0.1:0,password=on,audiodev=snd0")
         self.assertEqual(a.count("-audiodev"), 1)
         self.assertIn("AC97,audiodev=snd0", a)
-        self.assertNotIn("audiodev", self.plan()[self.plan().index("-vnc") + 1])
+        self.assertIn("audiodev=snd0", self.plan()[self.plan().index("-vnc") + 1])     # always there, so a card can be added live
+        self.assertNotIn("AC97", self.plan())
 
     def test_new_options_validate_and_read_from_env(self):
         from vortax import settings
@@ -62,7 +63,7 @@ class Builder(unittest.TestCase):
 
     def test_defaults_have_no_extras(self):
         a = self.plan()
-        for bad in ("-virtfs", "usb-host", "-audiodev"):
+        for bad in ("-virtfs", "usb-host", "AC97", "hda-duplex"):
             self.assertNotIn(bad, a)
 
     def test_termux_caps_ram(self):

@@ -32,9 +32,10 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .. import __license__, __source_url__, __version__, catalog, presets, disk, doctor, extract, launch, paths, session, settings, tunnels
+from .. import __license__, __source_url__, __version__, catalog, presets, disk, doctor, extract, launch, live, paths, session, settings, tunnels
 from ..errors import VortaxError
 from .stats import Sampler
+from .trust import Trust
 
 MAX_BODY = 64 * 1024
 LOOPBACK = {"127.0.0.1", "localhost", "::1", "[::1]"}
@@ -97,8 +98,9 @@ def _newest_cache_size() -> int:
 class State:
     """Process-wide dashboard state."""
 
-    def __init__(self, token: str, host: str, port: int):
+    def __init__(self, token: str, host: str, port: int, trust: Trust | None = None):
         self.token, self.host, self.port = token, host, port
+        self.trust = trust or Trust()
         self.sampler = Sampler()
         self.sampler.start()
         self.jobs: dict[str, Job] = {}
@@ -280,9 +282,31 @@ class Handler(BaseHTTPRequestHandler):
             else (self.headers.get("Host") or "").split("]")[0] + "]"
         return host in LOOPBACK
 
+    def _key_ok(self, supplied: str) -> bool:
+        """The owner's master token (kept on disk, used by scripts) or the key of a trusted device."""
+        if not supplied:
+            return False
+        if hmac.compare_digest(supplied.encode(), self.state.token.encode()):
+            return True
+        return self.state.trust.verify(supplied)
+
     def _authed(self) -> bool:
-        supplied = self.headers.get("X-Vortax-Token", "")
-        return bool(supplied) and hmac.compare_digest(supplied.encode(), self.state.token.encode())
+        return self._key_ok(self.headers.get("X-Vortax-Token", ""))
+
+    def _auth_route(self, method: str, path: str) -> None:
+        """Sign-in endpoints. They work without a key, so they are throttled per address and need JSON."""
+        trust, who = self.state.trust, self.client_address[0]
+        name = path[len("/api/auth/"):].strip("/")
+        if method == "GET" and name == "info":
+            return self._json(trust.info())
+        if method != "POST" or name not in ("claim", "login"):
+            return self._error(404, "no such endpoint")
+        if "application/json" not in (self.headers.get("Content-Type") or ""):
+            return self._error(415, "POST bodies must be application/json")
+        body = self._body()
+        label = body.get("label", "")
+        key = trust.claim(body.get("code", ""), label, who) if name == "claim" else trust.login(body.get("password", ""), label, who)
+        return self._json({"key": key})
 
     def _body(self) -> dict:
         try:
@@ -318,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._console(query)
             if method == "GET" and not path.startswith("/api/"):
                 return self._static(path)
+            if path.startswith("/api/auth/"):
+                return self._auth_route(method, path)
             if not self._authed():
                 return self._error(401, "missing or wrong token")
             if method == "POST" and "application/json" not in (self.headers.get("Content-Type") or ""):
@@ -343,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
         from . import ws
         protos = [p.strip() for p in (self.headers.get("Sec-WebSocket-Protocol") or "").split(",")]
         token = next((p[4:] for p in protos if p.startswith("tok.")), "")
-        if not token or not hmac.compare_digest(token.encode(), self.state.token.encode()):
+        if not self._key_ok(token):
             return self._error(401, "missing or wrong token")
         origin = self.headers.get("Origin") or ""
         if origin and urlparse(origin).netloc != (self.headers.get("Host") or ""):
@@ -491,6 +517,12 @@ class Handler(BaseHTTPRequestHandler):
                 "options": {"accel": list(settings.ACCEL), "nic": list(settings.NICS), "audio": list(settings.AUDIO)}}
     api_vm_edit.post = True
 
+    def api_vm_live(self, body, q):
+        """Change a RUNNING VM through the monitor: swap a CD, plug in or pull out a sound card."""
+        inst = session.Instance(str(body.get("name") or "vortax"))
+        return {"message": live.apply(inst, str(body.get("action", "")), str(body.get("value", "")))}
+    api_vm_live.post = True
+
     def api_password_set(self, body, q):
         inst = session.Instance(str(body.get("name") or "vortax"))
         pw = session.new_password() if body.get("generate") else str(body.get("password") or "")
@@ -525,6 +557,37 @@ class Handler(BaseHTTPRequestHandler):
         return _webvnc(self.state, inst, str(body.get("action", "start")))
     api_webvnc.post = True
 
+    # --- trusted devices
+    def _current_device(self) -> str | None:
+        return self.state.trust.device_id(self.headers.get("X-Vortax-Token", ""))
+
+    def api_devices(self, body, q):
+        t = self.state.trust
+        return {"devices": t.devices(), "current": self._current_device(), "max_devices": t.max_devices,
+                "password": t.has_password}
+
+    def api_devices_invite(self, body, q):
+        return {"code": self.state.trust.new_claim()}
+    api_devices_invite.post = True
+
+    def api_devices_remove(self, body, q):
+        self.state.trust.remove(str(body.get("id", "")))
+        return {"ok": True}
+    api_devices_remove.post = True
+
+    def api_devices_limit(self, body, q):
+        self.state.trust.set_max(body.get("max_devices"))
+        return {"ok": True}
+    api_devices_limit.post = True
+
+    def api_devices_password(self, body, q):
+        if body.get("clear"):
+            self.state.trust.clear_password()
+        else:
+            self.state.trust.set_password(str(body.get("password", "")))
+        return {"ok": True}
+    api_devices_password.post = True
+
     def api_secret(self, body, q):
         settings.set_secret(str(body.get("name", "")), str(body.get("value", "")))
         return {"ok": True}
@@ -555,8 +618,8 @@ def load_token(new: bool = False) -> str:
     return token
 
 
-def make_server(host: str, port: int, token: str) -> ThreadingHTTPServer:
-    state = State(token, host, port)
+def make_server(host: str, port: int, token: str, trust: Trust | None = None) -> ThreadingHTTPServer:
+    state = State(token, host, port, trust)
 
     class Bound(Handler):
         pass
@@ -567,19 +630,30 @@ def make_server(host: str, port: int, token: str) -> ThreadingHTTPServer:
     return server
 
 
-def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False, new_token: bool = False) -> int:
+def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False, new_token: bool = False,
+          trust: Trust | None = None) -> int:
     token = load_token(new_token)
+    trust = trust or Trust()
     try:
-        server = make_server(host, port, token)
+        server = make_server(host, port, token, trust)
     except OSError as exc:
         raise VortaxError(f"cannot listen on {host}:{port}: {exc}") from None
     shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-    url = f"http://{shown}:{port}/#token={token}"
+    base = f"http://{shown}:{port}/"
+    url = base
     print(f"vortax dashboard {__version__} listening on {host}:{port}")
-    print(f"open: {url}")
+    if trust.has_room():
+        url = f"{base}#claim={trust.new_claim()}"
+        print(f"one-time link (the first browser that opens it becomes trusted; {trust.count()} of {trust.max_devices} trusted):")
+        print(f"open: {url}")
+    else:
+        print(f"{trust.count()} trusted device(s), limit {trust.max_devices}. Open {base} from a trusted browser.")
+        print("another phone can join only if you raise the limit (--max-devices N) or set a password (--set-password).")
+    if trust.has_password:
+        print(f"password sign-in is on: any browser that knows the password can sign in at {base}")
     if host not in LOOPBACK:
-        print("warning: this is plain HTTP on a non-loopback address; anyone who can read the token can "
-              "control your VMs. Prefer an SSH tunnel or Tailscale.", file=sys.stderr)
+        print("warning: this is plain HTTP on a non-loopback address; anyone on the network who sees the traffic "
+              "can steal a session. Prefer an SSH tunnel or Tailscale.", file=sys.stderr)
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
