@@ -14,6 +14,9 @@
   growing past Android's memory limit gets Termux killed.
 - Preset keys `tb_size_mb` and `vcpus_tcg`.
 - `status` and the dashboard now show the RAM and vCPU count QEMU really gets; a preset can override the requested values.
+- `vortax edit --name X ...` and an **Edit** button on each VM card in the dashboard change an existing VM's saved settings
+  (RAM, vCPUs, sound card, network card, acceleration, `--mttcg`, ...) without recreating it. The disk is never touched and
+  the change applies the next time the VM starts. Name, system, source and passwords cannot be edited this way.
 - Sound card `es1370` (`--audio es1370`): Windows 2000/XP ship a driver for it, which stripped-down XP images often lack for
   the other cards.
 - `--mttcg` (`VORTAX_MTTCG`): without KVM, run several vCPUs on several host threads (`-accel tcg,thread=multi`). Experimental

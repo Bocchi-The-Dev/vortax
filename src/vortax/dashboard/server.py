@@ -480,6 +480,17 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True}
     api_vm.post = True
 
+    def api_vm_edit(self, body, q):
+        """Read (no `changes`) or change the saved launch settings of an existing VM. The disk is never touched."""
+        inst = session.Instance(str(body.get("name") or "vortax"))
+        changes = body.get("changes") or {}
+        if not isinstance(changes, dict):
+            raise VortaxError("changes must be an object")
+        values = session.edit_settings(inst, changes)
+        return {"values": values, "running": inst.running(), "saved": bool(changes),
+                "options": {"accel": list(settings.ACCEL), "nic": list(settings.NICS), "audio": list(settings.AUDIO)}}
+    api_vm_edit.post = True
+
     def api_password_set(self, body, q):
         inst = session.Instance(str(body.get("name") or "vortax"))
         pw = session.new_password() if body.get("generate") else str(body.get("password") or "")

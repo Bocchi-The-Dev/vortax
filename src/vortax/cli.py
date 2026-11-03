@@ -405,6 +405,25 @@ def cmd_tunnel(ns) -> int:
     return 0
 
 
+def cmd_edit(ns) -> int:
+    inst = _instance_arg(ns)
+    changes = {k: getattr(ns, k) for k in session.VM_EDITABLE if getattr(ns, k, None) is not None}
+    values = session.edit_settings(inst, changes)
+    width = max(len(k) for k in values)
+    for k, v in values.items():
+        print(f"  {k.ljust(width)}  {v!r}")
+    if not changes:
+        print("nothing changed; give options such as --audio es1370 --vcpus 2 --mttcg")
+        return 0
+    print(f"saved for {inst.name}; the disk was not touched")
+    if inst.running():
+        print(f"{inst.name} is running: it picks this up after a restart "
+              f"(vortax stop --name {inst.name}, then vortax start --name {inst.name})")
+    else:
+        print(f"applies the next time you run: vortax start --name {inst.name}")
+    return 0
+
+
 def cmd_rm(ns) -> int:
     inst = _instance_arg(ns)
     if inst.running():
@@ -750,6 +769,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp = named(add("tunnel", cmd_tunnel, "start or stop a tunnel for a running VM"))
     sp.add_argument("action", choices=["start", "stop"])
     sp.add_argument("kind", nargs="?", choices=[t for t in settings.TUNNELS if t != "none"], default="bore")
+
+    sp = named(add("edit", cmd_edit, "change the saved settings of an existing VM (RAM, CPUs, sound...); keeps its disk"))
+    flag = argparse.BooleanOptionalAction
+    sp.add_argument("--ram-mb", type=int, help="0 = automatic")
+    sp.add_argument("--vcpus", type=int)
+    sp.add_argument("--accel", choices=settings.ACCEL)
+    sp.add_argument("--nic", help=f"network card model ({', '.join(settings.NICS)})")
+    sp.add_argument("--audio", choices=settings.AUDIO, help="emulated sound card")
+    sp.add_argument("--mttcg", action=flag, default=None, help="without KVM, run vCPUs on several host cores (experimental)")
+    sp.add_argument("--boot", choices=settings.BOOT_ORDER, help="disk ignores the installer ISO")
+    sp.add_argument("--ssh", action=flag, default=None)
+    sp.add_argument("--snapshot-on-stop", action=flag, default=None)
+    sp.add_argument("--notify", action=flag, default=None)
+    sp.add_argument("--runtime", type=int, help="minutes before the VM is stopped (0 = never)")
+    sp.add_argument("--extra-qemu-args", help="raw QEMU arguments appended verbatim")
 
     sp = named(add("rm", cmd_rm, "delete a VM's disk, media and state"))
     sp.add_argument("--yes", action="store_true")

@@ -107,6 +107,60 @@ class Dashboard(Sandbox):
         self.assertEqual(self.wait_job(body["job"])["status"], "done")
         self.assertTrue(inst.running())
 
+    def test_edit_an_existing_vm_keeps_its_disk_and_applies_on_next_start(self):
+        src = self.tmp / "d.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed1", "source": str(src), "ram_mb": 64, "vcpus": 2})
+        self.assertEqual(self.wait_job(body["job"])["status"], "done")
+        inst = session.Instance("ed1")
+        self.addCleanup(inst.kill)
+        _, body, _ = self.call("POST", "/api/vm", {"name": "ed1", "action": "stop"})
+        self.wait_job(body["job"])
+        disk = next(iter(inst.disk_candidates()))
+        before = (disk.stat().st_size, disk.stat().st_mtime_ns)
+
+        s, cur, _ = self.call("POST", "/api/vm/edit", {"name": "ed1"})              # read the current values
+        self.assertEqual((s, cur["values"]["ram_mb"], cur["values"]["vcpus"], cur["saved"]), (200, 64, 2, False))
+        self.assertIn("es1370", cur["options"]["audio"])
+        s, out, _ = self.call("POST", "/api/vm/edit", {"name": "ed1", "changes": {"audio": "es1370", "vcpus": 3, "mttcg": True}})
+        self.assertEqual((s, out["values"]["audio"], out["values"]["vcpus"], out["values"]["mttcg"]), (200, "es1370", 3, True))
+        self.assertEqual(before, (disk.stat().st_size, disk.stat().st_mtime_ns))     # the disk was not touched
+
+        _, body, _ = self.call("POST", "/api/vm", {"name": "ed1", "action": "start"})   # plain restart picks it up
+        self.assertEqual(self.wait_job(body["job"])["status"], "done")
+        cmd = inst.state()["cmd"]
+        self.assertIn("ES1370,audiodev=snd0", cmd)
+        self.assertEqual(cmd[cmd.index("-smp") + 1], "3")
+        self.assertEqual(cmd[cmd.index("-m") + 1], "64")                              # untouched settings stay
+
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed1", "changes": {"audio": "nope"}})[0], 400)
+        for bad in ({"name": "x"}, {"system": "ubuntu"}, {"source": "/etc/passwd"}, {"password": "hunter2"}):
+            self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed1", "changes": bad})[0], 400, bad)
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "ed1", "changes": ["audio"]})[0], 400)
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "never-started"})[0], 400)
+        self.assertEqual(self.call("POST", "/api/vm/edit", {"name": "../x"})[0], 400)
+        self.assertEqual(session.load_saved_settings(inst).get("audio"), "es1370")
+        self.assertNotIn("password", session.load_saved_settings(inst))
+
+    def test_edit_from_the_command_line(self):
+        src = self.tmp / "d.qcow2"; src.write_bytes(QCOW)
+        _, body, _ = self.call("POST", "/api/run", {"name": "ed2", "source": str(src), "ram_mb": 64})
+        self.wait_job(body["job"])
+        inst = session.Instance("ed2")
+        self.addCleanup(inst.kill)
+        inst.stop(graceful=False, timeout=5, log=lambda *_: None)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli.main(["edit", "--name", "ed2", "--audio", "es1370", "--vcpus", "4", "--mttcg", "--ram-mb", "128"])
+            rc_show = cli.main(["edit", "--name", "ed2"])
+            rc_off = cli.main(["edit", "--name", "ed2", "--no-mttcg"])
+        self.assertEqual((rc, rc_show, rc_off), (0, 0, 0), err.getvalue())
+        saved = session.load_saved_settings(inst)
+        self.assertEqual((saved["audio"], saved["vcpus"], saved["ram_mb"], saved["mttcg"]), ("es1370", 4, 128, False))
+        self.assertIn("the disk was not touched", out.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertNotEqual(cli.main(["edit", "--name", "ed2", "--vcpus", "0"]), 0)           # validated
+        self.assertEqual(session.load_saved_settings(inst)["vcpus"], 4)                            # and not saved
+
     def test_job_errors_are_reported_not_raised(self):
         s, body, _ = self.call("POST", "/api/run", {"name": "bad1", "source": "/no/such/file.iso"})
         job = self.wait_job(body["job"])

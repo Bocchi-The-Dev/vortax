@@ -25,6 +25,7 @@ from typing import Callable
 
 from . import catalog, disk, extract, fetch, monitor, paths, qemu, tunnels
 from .errors import VortaxError
+from . import settings as settings_mod
 from .settings import Settings, parse_forward, parse_share, parse_usb
 
 Log = Callable[[str], None]
@@ -491,6 +492,26 @@ def save_settings(inst: Instance, s: Settings) -> None:
     """Remember how a VM was launched so `start` / the dashboard can bring it back without arguments."""
     data = {k: v for k, v in s.__dict__.items() if k not in _SECRET_KEYS}
     paths.write_private(inst.run / "settings.json", json.dumps(data, indent=2))
+
+
+# What an existing VM may have changed after it was created. Identity (name, system, source, arch, boot mode), the
+# disk (see `vortax disk`) and passwords are deliberately not here. The disk itself is never touched by an edit.
+VM_EDITABLE = ("ram_mb", "vcpus", "accel", "nic", "audio", "mttcg", "boot", "ssh", "snapshot_on_stop", "notify",
+               "runtime", "extra_qemu_args")
+
+
+def edit_settings(inst: Instance, changes: dict) -> dict:
+    """Change how a VM will be launched next time. Returns the editable values after the change."""
+    bad = sorted(set(changes) - set(VM_EDITABLE))
+    if bad:
+        raise VortaxError(f"cannot edit {', '.join(bad)} on an existing VM (editable: {', '.join(VM_EDITABLE)})")
+    saved = load_saved_settings(inst)
+    if not saved:
+        raise VortaxError(f"{inst.name} has no saved launch settings: start it once first")
+    merged = settings_mod.resolve(environ={}, config={**saved, **changes})      # validates every value
+    if changes:
+        save_settings(inst, merged)
+    return {k: getattr(merged, k) for k in VM_EDITABLE}
 
 
 def load_saved_settings(inst: Instance) -> dict:

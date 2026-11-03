@@ -154,10 +154,33 @@ function vmCard(vm) {
       h("button", { class: "btn", text: "Connect", onclick: () => { view = "access"; render(); } }));
   } else if (vm.disk) {
     row.append(h("button", { class: "btn primary", text: "Start", onclick: () => vmAct(vm.name, "start") }),
-      h("button", { class: "btn", text: "Boot from disk", onclick: () => bootFromDisk(vm.name) }));
+      h("button", { class: "btn", text: "Boot from disk", onclick: () => bootFromDisk(vm.name) }),
+      h("button", { class: "btn", text: "Edit", onclick: () => editVm(vm.name) }));
   }
   card.append(row);
   return card;
+}
+
+/* Change the saved settings of an existing VM (RAM, CPUs, sound...). Its disk is not touched. */
+async function editVm(name) {
+  const r = await act(() => api("vm/edit", { name }));
+  if (!r) return;
+  const x = r.values, o = r.options, num = (id, val, min) => h("input", { id, type: "number", min, value: String(val) });
+  const f = h("div", { class: "form" },
+    field("RAM (MB, 0 = auto)", num("e_ram", x.ram_mb, "0")),
+    field("vCPUs", num("e_cpu", x.vcpus, "1")),
+    field("Sound", select("e_audio", o.audio, x.audio)),
+    field("Network card", select("e_nic", o.nic, x.nic)),
+    field("Acceleration", select("e_accel", o.accel, x.accel)),
+    field("Several vCPUs on several cores (experimental)", select("e_mt", ["off", "on"], x.mttcg ? "on" : "off")));
+  openModal(h("h3", { text: "Edit " + name }),
+    h("p", { class: "sub", text: "Takes effect the next time the VM starts. The disk and your installed system are not touched." }), f,
+    h("div", { class: "row" }, h("button", { class: "btn primary", text: "Save", onclick: async () => {
+      const v = (id) => $("#" + id).value;
+      const changes = { ram_mb: Number(v("e_ram")), vcpus: Number(v("e_cpu")), audio: v("e_audio"), nic: v("e_nic"), accel: v("e_accel"), mttcg: v("e_mt") === "on" };
+      const done = await act(() => api("vm/edit", { name, changes }), "Saved. It applies the next time the VM starts.");
+      if (done) closeModal();
+    } }), h("button", { class: "btn", text: "Cancel", onclick: closeModal })));
 }
 
 function bootFromDisk(name) {

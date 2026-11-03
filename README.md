@@ -61,6 +61,7 @@ vortax start lab --snapshot-on-stop             # stop saves the live state, the
 vortax start lab --runtime 90                   # a background watcher stops it after 90 minutes
 vortax screenshot --name lab --out lab.png      # PNG of the guest display
 vortax disk resize +20G --name lab              # also: disk info, disk compact
+vortax edit --name lab --audio es1370 --vcpus 2  # change an existing VM; its disk is kept, applies at next start
 vortax logs -f --name lab                       # follow the QEMU log
 ```
 
