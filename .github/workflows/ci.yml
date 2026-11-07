@@ -61,7 +61,7 @@ jobs:
       - name: Dashboard script parses
         run: node --check src/vortax/dashboard/static/app.js
       - name: Shell scripts
-        run: shellcheck --severity=warning packaging/build-deb.sh packaging/check-license.sh packaging/make-apt-repo.sh debian/postinst debian/prerm
+        run: shellcheck --severity=warning packaging/build-deb.sh packaging/check-license.sh packaging/make-apt-repo.sh packaging/install.sh packaging/deb/postinst packaging/deb/prerm
 
   browser:
     name: dashboard console in headless Chromium

@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME = vortax
+export DH_VERBOSE = 1
+
+%:
+	dh $@ --buildsystem=pybuild
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	mkdir -p $(CURDIR)/debian/.home
+	HOME=$(CURDIR)/debian/.home PYTHONPATH=$(CURDIR)/src \
+		python3 -m unittest discover -s tests -t .
+endif
+
+override_dh_install:
+	dh_install
+	install -D -m 644 packaging/vortax.bash-completion \
+		debian/vortax/usr/share/bash-completion/completions/vortax
+	install -D -m 644 packaging/vortax-dashboard.service \
+		debian/vortax/usr/lib/systemd/user/vortax-dashboard.service
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGELOG.md
+
+override_dh_clean:
+	rm -rf debian/.home
+	dh_clean

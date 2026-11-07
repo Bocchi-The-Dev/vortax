@@ -13,12 +13,17 @@ disk, starts QEMU, and gives you VNC access, optionally through a tunnel.
 
 ## Install
 
-Debian / Ubuntu (and Debian inside proot on a phone):
+Debian / Ubuntu (and Debian inside proot on a phone), one command, and `apt upgrade` keeps it current:
 
 ```sh
-sudo apt install ./vortax_3.0.0~b1-1_all.deb      # pulls in qemu-system-x86 and qemu-utils
+curl -fsSL https://codevortax.github.io/vortax/install.sh | sudo sh
 vortax doctor
 ```
+
+The script is short and readable ([`packaging/install.sh`](packaging/install.sh)): it adds the signed repository
+and runs `apt-get install vortax`. Prefer to do it by hand, or to install a downloaded file? See
+[docs/APT.md](docs/APT.md). Once the package is in the Debian archive this will be just `sudo apt install vortax`
+([docs/DEBIAN.md](docs/DEBIAN.md)).
 
 Anywhere with Python 3.9+ (Termux, other distros):
 

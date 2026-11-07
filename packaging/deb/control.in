@@ -1,0 +1,17 @@
+Package: vortax
+Version: @VERSION@
+Architecture: all
+Section: utils
+Priority: optional
+Maintainer: @MAINTAINER@
+Installed-Size: @SIZE@
+Depends: python3 (>= 3.9), qemu-system-x86, qemu-utils
+Recommends: ovmf, curl | wget | aria2, p7zip-full, websockify, novnc
+Suggests: qemu-system-arm, qemu-efi-aarch64, rclone, unrar-free, zstd, tigervnc-viewer
+Homepage: https://github.com/CodeVortax/vortax
+Description: run and manage QEMU virtual machines from a CLI and web dashboard
+ Vortax downloads a system from a built-in catalog (or takes your own ISO,
+ disk image or archive), prepares the disk, and starts it under QEMU with
+ VNC access, optional tunnels (bore, ngrok, Tailscale), snapshots, export
+ and a token-protected web dashboard. KVM is used when available, software
+ emulation otherwise. The core uses only the Python standard library.
