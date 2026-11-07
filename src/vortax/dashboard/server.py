@@ -564,8 +564,8 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False,
         raise VortaxError(f"cannot listen on {host}:{port}: {exc}") from None
     shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     url = f"http://{shown}:{port}/#token={token}"
-    print(f"vortax dashboard {__version__} listening on {host}:{port}")
-    print(f"open: {url}")
+    print(f"vortax dashboard {__version__} listening on {host}:{port}", flush=True)
+    print(f"open: {url}", flush=True)
     if host not in LOOPBACK:
         print("warning: this is plain HTTP on a non-loopback address; anyone who can read the token can "
               "control your VMs. Prefer an SSH tunnel or Tailscale.", file=sys.stderr)
