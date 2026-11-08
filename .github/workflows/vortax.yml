@@ -58,6 +58,10 @@ jobs:
             --hostname "${TAILSCALE_HOSTNAME}" \
             --ssh
 
+      - name: Add current user to the kvm group
+        run: |
+          sudo usermod -aG kvm $USER
+
       - name: Install Vortax
         run: pipx install .
 
