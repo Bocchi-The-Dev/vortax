@@ -36,14 +36,27 @@ jobs:
       - name: Run Vortax
         run: |
           nohup vortax dashboard > /tmp/vortax.log 2>&1 &
-          sleep 5
+          # wait for the dashboard to print its URL instead of a blind sleep
+          for i in $(seq 1 30); do
+            grep -q '^open:' /tmp/vortax.log && break
+            sleep 1
+          done
           cat /tmp/vortax.log
 
       - name: Connection info + keep alive
         run: |
           TS_IP=$(tailscale ip -4)
+          LOCAL_URL=$(grep -m1 '^open:' /tmp/vortax.log | sed 's/^open: //')
+          PORT=$(echo "$LOCAL_URL" | sed -E 's#https?://[^:/]+:([0-9]+).*#\1#')
+
+          # forward tailnet:PORT -> localhost:PORT
+          sudo tailscale serve --bg --tcp="${PORT}" "tcp://127.0.0.1:${PORT}"
+
+          DASH_URL=$(echo "$LOCAL_URL" | sed "s#127.0.0.1#${TS_IP}#")
+
           echo "=== CONNECTION INFO ==="
           echo "Tailscale IP:  ${TS_IP}"
           echo "Hostname:      ${TAILSCALE_HOSTNAME}"
           echo "SSH:           ssh runner@${TS_IP}"
+          echo "Dashboard:     ${DASH_URL}"
           while true; do sleep 600; done
