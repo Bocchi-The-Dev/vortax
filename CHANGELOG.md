@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `vortax doctor --fix`: install the tools `doctor` reports as missing (QEMU, UEFI firmware, noVNC, websockify, 7z, ...)
+  through apt, Termux `pkg`, dnf, zypper, pacman, apk or brew. It shows the commands and asks first (`--dry-run` only
+  shows them, `--yes` skips the question, `--optional` adds the extras), installs one package at a time so one
+  unknown name cannot block the rest, and re-checks afterwards. bore, ngrok, tailscale and the `kvm` group are only
+  explained.
+- `vortax doctor` now checks for the noVNC web client that the dashboard's browser console needs.
+
 ## 3.1.0b2
 
 ### Added

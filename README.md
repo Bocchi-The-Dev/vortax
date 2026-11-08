@@ -32,6 +32,19 @@ pipx install .            # or: pip install .
 pkg/apt install qemu ...  # you still need qemu-system-x86_64 and qemu-img (Termux: `pkg search qemu`)
 ```
 
+Missing tools (QEMU and friends)? Let Vortax install them with your system's package manager:
+
+```sh
+vortax doctor --fix --dry-run     # show exactly what it would run, change nothing
+vortax doctor --fix               # ask, then install the required and recommended tools
+vortax doctor --fix --optional    # also the extras (aria2, unrar, zstd, rclone, aarch64 guests)
+```
+
+It only installs a fixed list of packages by name through `apt`, Termux `pkg`, `dnf`, `zypper`, `pacman`, `apk` or
+`brew`, one at a time, and never pipes anything into a shell. Third-party tools (bore, ngrok, tailscale) and system
+settings (the `kvm` group) are only explained. apt and Termux are the main targets; on the others a package name that
+does not exist is reported as failed instead of guessed.
+
 Build the `.deb` yourself: `MAINTAINER="You <you@example.com>" packaging/build-deb.sh` → `dist/`.
 
 ## Quick start

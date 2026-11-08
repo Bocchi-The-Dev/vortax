@@ -44,6 +44,9 @@ Serve the web dashboard (127.0.0.1:8765 by default, token protected).
 .TP
 .B doctor, selftest, check-links
 Check the installation; boot a tiny test guest; check catalog URLs.
+.TP
+.B doctor --fix [--dry-run] [--yes] [--optional]
+Install the missing tools with the system package manager (apt, pkg, dnf, zypper, pacman, apk, brew). Shows the exact commands and asks first; --dry-run only shows them, --yes skips the question, --optional adds the extras. Third-party tools and system settings are explained, never changed.
 .SH OPTIONS WORTH KNOWING
 .TP
 .B --share PATH[:TAG]

@@ -65,6 +65,11 @@ def run_checks() -> list[Check]:
                        ("rclone", "apt install rclone (optional export upload)")):
         checks.append(_tool(tool, False, hint))
 
+    from .dashboard import server as _dashboard      # noVNC is looked up in the same places the dashboard uses
+    novnc = next((d for d in _dashboard.NOVNC_DIRS if os.path.exists(os.path.join(d, "vnc.html"))), "")
+    checks.append(Check("noVNC web client", bool(novnc), False, novnc or "not found",
+                        "apt install novnc | Termux: pkg install novnc (browser VNC in the dashboard)"))
+
     if envinfo.is_termux():
         miss = [c.name for c in checks if not c.ok and c.name in envinfo.termux_packages()]
         cmd = envinfo.termux_install_command(miss)

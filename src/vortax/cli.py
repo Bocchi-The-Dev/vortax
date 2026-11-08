@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, launch, paths, presets, qemu, selftest, session, settings
+from . import __source_url__, __version__, access, catalog, disk, doctor, envinfo, fetch, installer, launch, paths, presets, qemu, selftest, session, settings
 from .errors import VortaxError
 
 DESCRIPTION = """\
@@ -441,11 +441,21 @@ def cmd_access(ns) -> int:
 
 
 def cmd_doctor(ns) -> int:
+    if ns.fix and ns.json:
+        raise VortaxError("--fix cannot be combined with --json")
+    if (ns.yes or ns.dry_run or ns.optional) and not ns.fix:
+        raise VortaxError("--yes, --dry-run and --optional only make sense together with --fix")
     checks = doctor.run_checks()
     if ns.json:
         print(json.dumps([c.to_dict() for c in checks], indent=2))
-    else:
-        print(doctor.format_report(checks))
+        return doctor.exit_code(checks)
+    print(doctor.format_report(checks))
+    if ns.fix:
+        result = installer.fix(checks, yes=ns.yes, dry_run=ns.dry_run, include_optional=ns.optional)
+        if result.installed:
+            print("\nchecking again:\n")
+            checks = doctor.run_checks()
+            print(doctor.format_report(checks))
     return doctor.exit_code(checks)
 
 
@@ -794,8 +804,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("wizard", cmd_wizard, "answer a few questions and start a VM")
 
-    sp = add("doctor", cmd_doctor, "check the installation")
+    sp = add("doctor", cmd_doctor, "check the installation; --fix installs what is missing")
     sp.add_argument("--json", action="store_true")
+    sp.add_argument("--fix", action="store_true", help="install the missing tools with the system package manager")
+    sp.add_argument("--yes", action="store_true", help="with --fix: do not ask before installing")
+    sp.add_argument("--dry-run", action="store_true", help="with --fix: show the commands and stop")
+    sp.add_argument("--optional", action="store_true", help="with --fix: also install the optional extras")
 
     sp = add("selftest", cmd_selftest, "verify the install; --boot also boots a tiny test guest")
     sp.add_argument("--boot", action="store_true")
