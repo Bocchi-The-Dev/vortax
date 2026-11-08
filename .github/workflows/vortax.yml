@@ -16,11 +16,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build deps
+      - name: Install apt deps
         run: |
+          sudo add-apt-repository -y multiverse
           sudo apt-get update
-          sudo apt-get install -y python3-pip pipx
+          sudo apt-get install -y \
+            python3-pip pipx curl jq \
+            qemu-system-x86 qemu-utils qemu-system-arm \
+            ovmf aria2 \
+            p7zip-full unrar zstd \
+            websockify novnc rclone
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          ls -l /dev/kvm || echo "warning: /dev/kvm not present"
+
+      - name: Install ngrok
+        run: |
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
+            | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt-get update
+          sudo apt-get install -y ngrok
+
+      - name: Install bore
+        run: |
+          URL=$(curl -fsSL https://api.github.com/repos/ekzhang/bore/releases/latest \
+            | jq -r '.assets[] | select(.name | test("x86_64-unknown-linux-musl.tar.gz$")) | .browser_download_url')
+          curl -fsSL "$URL" | sudo tar -xz -C /usr/local/bin bore
+          bore --version
 
       - name: Install Tailscale
         run: |
@@ -32,6 +62,9 @@ jobs:
 
       - name: Install Vortax
         run: pipx install .
+
+      - name: Vortax doctor
+        run: vortax doctor
 
       - name: Run Vortax
         run: |
