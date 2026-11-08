@@ -6,7 +6,7 @@ on:
       timeout_minutes:
         description: "Minutes before the runner times out (1-360)"
         type: string
-        default: "360"
+        default: "15"
 
 permissions:
   contents: write
@@ -33,14 +33,6 @@ jobs:
             p7zip-full unrar zstd \
             websockify novnc rclone
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm || true
-          ls -l /dev/kvm || echo "warning: /dev/kvm not present"
 
       - name: Install ngrok
         run: |
