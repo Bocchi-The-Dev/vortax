@@ -60,15 +60,21 @@ jobs:
           vortax doctor
           vortax selftest
           vortax selftest --boot --timeout 180
-          dpkg -L vortax
+          # The package must *contain* all of these. (dpkg -L is the package's file list; container images such as
+          # ubuntu:24.04 are minimized and tell dpkg not to unpack man pages, so the file may be absent on disk.)
           missing=""
           for f in /usr/share/man/man1/vortax.1.gz \
                    /usr/share/bash-completion/completions/vortax \
                    /usr/lib/systemd/user/vortax-dashboard.service \
                    /usr/share/doc/vortax/copyright; do
-            if [ -f "$f" ]; then echo "present: $f"; else echo "MISSING: $f"; missing=1; fi
+            if dpkg -L vortax | grep -qx "$f"; then echo "packaged: $f"; else echo "NOT IN PACKAGE: $f"; missing=1; fi
           done
           [ -z "$missing" ]
+          # These are not excluded by minimized images, so they must also be on disk.
+          test -f /usr/share/bash-completion/completions/vortax
+          test -f /usr/lib/systemd/user/vortax-dashboard.service
+          test -f /usr/share/doc/vortax/copyright
+          if [ -f /usr/share/man/man1/vortax.1.gz ]; then echo "man page installed"; else echo "man page not unpacked here (image excludes man pages); it is in the package"; fi
           sh debian/tests/smoke
 
       - uses: actions/upload-artifact@v4
