@@ -2,6 +2,11 @@ name: Vortax
 
 on:
   workflow_dispatch:
+    inputs:
+      timeout_minutes:
+        description: "Minutes before the runner times out (1-360)"
+        type: string
+        default: "360"
 
 permissions:
   contents: write
@@ -9,6 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-26.04
+    timeout-minutes: ${{ fromJSON(inputs.timeout_minutes) }}
     env:
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       TAILSCALE_HOSTNAME: gh-vortax-${{ github.run_id }}
