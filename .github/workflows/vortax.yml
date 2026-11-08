@@ -1,0 +1,30 @@
+name: Release
+
+# Push a tag such as v3.1.0b1 to build the .deb, publish a GitHub release and (optionally) update the apt repository.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt update && sudo apt upgrade
+          sudo apt install python3-pip python3
+          python3 -m pip install --user pipx
+          python3 -m pipx ensure path
+
+      - name: Install Vortax
+        run: |
+          pipx install .
+
+      - name: Run Vortax
+        run: |
+          vortax dashboard
