@@ -1,9 +1,7 @@
-name: Release
+name: Vortax
 
-# Push a tag such as v3.1.0b1 to build the .deb, publish a GitHub release and (optionally) update the apt repository.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
