@@ -42,13 +42,21 @@ gpg --batch --yes --pinentry-mode loopback ${GPG_PASSPHRASE:+--passphrase "$GPG_
 gpg --batch --yes --export "$GPG_KEY_ID" > "$out/vortax.gpg"
 gpg --batch --yes --armor --export "$GPG_KEY_ID" > "$out/vortax.asc"
 touch "$out/.nojekyll"
+install -m 644 packaging/install.sh "$out/install.sh"
 cat > "$out/index.html" <<'HTML'
 <!doctype html><meta charset="utf-8"><title>Vortax apt repository</title>
 <h1>Vortax apt repository</h1>
+<p>One command:</p>
+<pre>
+curl -fsSL URL/install.sh | sudo sh
+</pre>
+<p>Or by hand:</p>
 <pre>
 curl -fsSL URL/vortax.asc | sudo tee /usr/share/keyrings/vortax.asc &gt;/dev/null
 echo "deb [signed-by=/usr/share/keyrings/vortax.asc] URL stable main" | sudo tee /etc/apt/sources.list.d/vortax.list
 sudo apt update &amp;&amp; sudo apt install vortax
 </pre>
 HTML
+base="${REPO_URL:-https://codevortax.github.io/vortax}"
+sed -i "s#URL#$base#g" "$out/index.html"
 echo "repository written to $out"

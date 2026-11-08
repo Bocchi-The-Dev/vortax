@@ -52,8 +52,8 @@ chmod 644 "$pkg/usr/share/doc/vortax/changelog.gz"
 
 size="$(du -sk --exclude=DEBIAN "$pkg" | cut -f1)"
 sed -e "s/@VERSION@/$debver/" -e "s/@SIZE@/$size/" -e "s#@MAINTAINER@#$maint#" \
-    -e "s#https://github.com/CodeVortax/vortax#$home#" debian/control > "$pkg/DEBIAN/control"
-install -m 755 debian/postinst debian/prerm "$pkg/DEBIAN/"
+    -e "s#https://github.com/CodeVortax/vortax#$home#" packaging/deb/control.in > "$pkg/DEBIAN/control"
+install -m 755 packaging/deb/postinst packaging/deb/prerm "$pkg/DEBIAN/"
 
 mkdir -p dist
 out="dist/vortax_${debver}_all.deb"

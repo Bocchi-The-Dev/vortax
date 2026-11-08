@@ -2,6 +2,16 @@
 
 Releases are also published as a signed apt repository on GitHub Pages, so `apt upgrade` keeps Vortax current.
 
+One command:
+
+```sh
+curl -fsSL https://codevortax.github.io/vortax/install.sh | sudo sh
+```
+
+It does only what the manual steps below do. Undo it with
+`sudo apt-get remove vortax && sudo rm /etc/apt/sources.list.d/vortax.list /usr/share/keyrings/vortax.asc`.
+The same thing by hand:
+
 ```sh
 curl -fsSL https://codevortax.github.io/vortax/vortax.asc | sudo tee /usr/share/keyrings/vortax.asc >/dev/null
 echo "deb [signed-by=/usr/share/keyrings/vortax.asc] https://codevortax.github.io/vortax stable main" \

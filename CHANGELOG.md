@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.1.0b2
+
+### Added
+- One-command install on Debian and Ubuntu: `curl -fsSL https://codevortax.github.io/vortax/install.sh | sudo sh`
+  (`packaging/install.sh`, published with the apt repository).
+- `debian/` is now a real Debian source package (debhelper 13, pybuild, DEP-5 copyright), built and linted in CI on
+  Debian stable, Debian unstable and Ubuntu 24.04. See `docs/DEBIAN.md` for the route into the official archive.
+- Windows and Linux platform test workflow (`platform-test.yml`).
+
+### Fixed
+- `vortax dashboard`: the `open: ...#token=...` line is now flushed, so it reaches log files and `journalctl`
+  (it used to stay in the output buffer when stdout was not a terminal).
+- CI: Python 3.9 jobs run on Ubuntu 24.04 (`ubuntu-latest` no longer provides 3.9).
+
+### Known limitations
+- Windows is not supported yet: starting a VM fails right after QEMU launches (Unix-only process handling).
+
 ## 3.1.0b1
 
 ### Changed

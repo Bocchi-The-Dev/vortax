@@ -1,0 +1,201 @@
+name: Platform test
+
+# Installs the *built wheel* (what `pip install vortax` gives users) on Linux and Windows and exercises the CLI,
+# the dashboard and a real QEMU boot. Windows steps never stop the job early, so one run shows everything that works
+# and everything that does not; the last step fails the job if any of them failed.
+on:
+  push:
+    branches: ["ci/platform-test"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-pip:
+    name: Linux, pip wheel (python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install QEMU (pip does not provide it)
+        run: sudo apt-get update -qq && sudo apt-get install -y qemu-system-x86 qemu-utils ovmf
+
+      - name: Build the wheel and install it into a clean venv
+        run: |
+          python -m pip install build
+          python -m build
+          python -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install dist/*.whl
+          echo "VX=$RUNNER_TEMP/v/bin/vortax" >> "$GITHUB_ENV"
+
+      - name: Run from another directory so the source tree cannot mask a packaging bug
+        run: |
+          cd "$RUNNER_TEMP"
+          "$VX" --version
+          "$VX" list | head -n 5
+          "$VX" profiles | head -n 5
+          "$VX" doctor
+          "$VX" selftest
+
+      - name: Wheel contains the data files and dashboard assets
+        run: |
+          "$RUNNER_TEMP/v/bin/python" - <<'PY'
+          import importlib.resources as r
+          root = r.files("vortax")
+          for p in ("data/systems.json", "data/profiles.json", "dashboard/static/index.html",
+                    "dashboard/static/app.js", "dashboard/static/app.css", "dashboard/static/rfb.js"):
+              assert root.joinpath(p).is_file(), f"missing from wheel: {p}"
+          print("package data OK")
+          PY
+
+      - name: Boot a tiny guest through the real pipeline
+        run: |
+          cd "$RUNNER_TEMP"
+          "$VX" selftest --boot --timeout 90
+          VORTAX_ACCEL=tcg "$VX" selftest --boot --timeout 120
+
+      - name: Dashboard over HTTP
+        run: |
+          cd "$RUNNER_TEMP"
+          "$VX" dashboard --port 8765 > dash.log 2>&1 &
+          for _ in $(seq 1 20); do curl -fs http://127.0.0.1:8765/ >/dev/null && break; sleep 0.5; done
+          token="$(sed -n 's/.*#token=//p' dash.log | head -n1)"
+          test -n "$token"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/overview)" = 401
+          curl -fs -H "X-Vortax-Token: ${token}" http://127.0.0.1:8765/api/overview | python -m json.tool > /dev/null
+          echo "dashboard OK"
+
+  windows:
+    name: Windows, pip wheel
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel and install it into a clean venv
+        id: install
+        continue-on-error: true
+        run: |
+          python -m pip install build
+          python -m build
+          python -m venv "$env:RUNNER_TEMP\v"
+          $whl = (Get-ChildItem dist\*.whl | Select-Object -First 1).FullName
+          & "$env:RUNNER_TEMP\v\Scripts\pip.exe" install $whl
+          "VX=$env:RUNNER_TEMP\v\Scripts\vortax.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VPY=$env:RUNNER_TEMP\v\Scripts\python.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: vortax --version
+        id: version
+        continue-on-error: true
+        run: Set-Location $env:RUNNER_TEMP; & $env:VX --version
+
+      - name: vortax list and profiles
+        id: list
+        continue-on-error: true
+        run: |
+          Set-Location $env:RUNNER_TEMP
+          & $env:VX list
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $env:VX profiles
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Wheel contains the data files and dashboard assets
+        id: data
+        continue-on-error: true
+        run: |
+          Set-Location $env:RUNNER_TEMP
+          @'
+          import importlib.resources as r
+          root = r.files("vortax")
+          for p in ("data/systems.json", "data/profiles.json", "dashboard/static/index.html", "dashboard/static/app.js"):
+              assert root.joinpath(p).is_file(), f"missing from wheel: {p}"
+          print("package data OK")
+          '@ | Set-Content -Encoding utf8 check.py
+          & $env:VPY check.py
+
+      - name: vortax selftest (plans only, no QEMU needed)
+        id: selftest
+        continue-on-error: true
+        run: Set-Location $env:RUNNER_TEMP; & $env:VX selftest
+
+      - name: vortax doctor before QEMU is installed
+        id: doctor_before
+        continue-on-error: true
+        run: Set-Location $env:RUNNER_TEMP; & $env:VX doctor
+
+      - name: Unit tests from source (tests use shell stubs for qemu, so failures here may be test-harness only)
+        id: unit
+        continue-on-error: true
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Install QEMU
+        id: qemu
+        continue-on-error: true
+        run: |
+          choco install qemu -y --no-progress
+          $dir = "C:\Program Files\qemu"
+          Test-Path "$dir\qemu-system-x86_64.exe"
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          & "$dir\qemu-system-x86_64.exe" --version
+
+      - name: vortax doctor with QEMU
+        id: doctor
+        continue-on-error: true
+        run: Set-Location $env:RUNNER_TEMP; & $env:VX doctor
+
+      - name: Boot a tiny guest through the real pipeline
+        id: boot
+        continue-on-error: true
+        run: Set-Location $env:RUNNER_TEMP; & $env:VX selftest --boot --timeout 120
+
+      - name: Dashboard over HTTP
+        id: dash
+        continue-on-error: true
+        run: |
+          Set-Location $env:RUNNER_TEMP
+          $p = Start-Process -FilePath $env:VX -ArgumentList "dashboard","--port","8765" -RedirectStandardOutput dash.log -RedirectStandardError dash.err -PassThru -NoNewWindow
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/ | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 500 }
+          }
+          Get-Content dash.log, dash.err -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "dashboard did not answer" }
+          $line = (Select-String -Path dash.log -Pattern '#token=(\S+)' | Select-Object -First 1)
+          if (-not $line) { throw "no token in dashboard output" }
+          $token = $line.Matches[0].Groups[1].Value
+          try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/api/overview | Out-Null; throw "unauthenticated request was allowed" } catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
+          Invoke-RestMethod -Headers @{ "X-Vortax-Token" = $token } http://127.0.0.1:8765/api/overview | ConvertTo-Json -Depth 3
+          Stop-Process -Id $p.Id -Force
+
+      - name: Summary (fails if any step above failed)
+        if: always()
+        shell: bash
+        run: |
+          fail=0
+          row() { printf '%-28s %s\n' "$1" "$2"; [ "$2" = "success" ] || fail=1; }
+          row "install wheel"          "${{ steps.install.outcome }}"
+          row "--version"              "${{ steps.version.outcome }}"
+          row "list / profiles"        "${{ steps.list.outcome }}"
+          row "package data"           "${{ steps.data.outcome }}"
+          row "selftest (plans)"       "${{ steps.selftest.outcome }}"
+          row "doctor (no qemu)"       "${{ steps.doctor_before.outcome }}"
+          row "unit tests"             "${{ steps.unit.outcome }}"
+          row "install qemu"           "${{ steps.qemu.outcome }}"
+          row "doctor (with qemu)"     "${{ steps.doctor.outcome }}"
+          row "boot guest (real qemu)" "${{ steps.boot.outcome }}"
+          row "dashboard + auth"       "${{ steps.dash.outcome }}"
+          exit $fail

@@ -1,14 +1,40 @@
-Package: vortax
-Version: @VERSION@
-Architecture: all
+Source: vortax
 Section: utils
 Priority: optional
-Maintainer: @MAINTAINER@
-Installed-Size: @SIZE@
-Depends: python3 (>= 3.9), qemu-system-x86, qemu-utils
-Recommends: ovmf, curl | wget | aria2, p7zip-full, websockify, novnc
-Suggests: qemu-system-arm, qemu-efi-aarch64, rclone, unrar-free, zstd, tigervnc-viewer
+Maintainer: Vortax Maintainers <maintainers@example.invalid>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-setuptools,
+ python3-wheel,
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
 Homepage: https://github.com/CodeVortax/vortax
+Vcs-Browser: https://github.com/CodeVortax/vortax
+Vcs-Git: https://github.com/CodeVortax/vortax.git
+
+Package: vortax
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ qemu-system-x86,
+ qemu-utils,
+Recommends:
+ aria2 | curl | wget,
+ ovmf,
+ p7zip-full,
+ novnc,
+ websockify,
+Suggests:
+ qemu-efi-aarch64,
+ qemu-system-arm,
+ rclone,
+ tigervnc-viewer,
+ unrar-free,
+ zstd,
 Description: run and manage QEMU virtual machines from a CLI and web dashboard
  Vortax downloads a system from a built-in catalog (or takes your own ISO,
  disk image or archive), prepares the disk, and starts it under QEMU with

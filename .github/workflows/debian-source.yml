@@ -1,0 +1,122 @@
+name: Debian packaging
+
+# 1. Builds the *source* package in debian/ the way Debian and a PPA would (dpkg-buildpackage + lintian) on
+#    Debian stable, Debian unstable and Ubuntu 24.04, then installs the result and runs it.
+# 2. Tests the one-command installer (packaging/install.sh) against a signed throwaway apt repository.
+on:
+  push:
+    branches: ["debian-source"]
+    paths: ["debian/**", "packaging/**", "pyproject.toml", "src/**", ".github/workflows/debian-source.yml"]
+  pull_request:
+    paths: ["debian/**", "packaging/**", "pyproject.toml", "src/**", ".github/workflows/debian-source.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-package:
+    name: source package on ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:stable", "debian:unstable", "ubuntu:24.04"]
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install the packaging tools
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends git ca-certificates build-essential fakeroot debhelper dh-python \
+            pybuild-plugin-pyproject python3-all python3-setuptools python3-wheel lintian devscripts
+
+      - uses: actions/checkout@v4
+
+      - name: Build the source and binary package from a clean orig tarball
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ver="$(python3 -c "import re,pathlib;print(re.search(r'__version__ = \"(.+?)\"',pathlib.Path('src/vortax/__init__.py').read_text()).group(1))")"
+          up="$(printf '%s' "$ver" | sed -E 's/(a|b|rc)([0-9]+)$/~\1\2/')"
+          mkdir -p /tmp/b
+          git archive --prefix="vortax-$up/" HEAD | tar -x -C /tmp/b
+          tar -C /tmp/b --exclude="vortax-$up/debian" -czf "/tmp/b/vortax_$up.orig.tar.gz" "vortax-$up"
+          cd "/tmp/b/vortax-$up"
+          test "$(dpkg-parsechangelog -S Version)" = "$up-1"
+          dpkg-buildpackage -us -uc
+          ls -la /tmp/b
+
+      - name: lintian (errors fail the job; everything it says is printed)
+        run: |
+          lintian --version
+          lintian --info --display-info --pedantic --fail-on error /tmp/b/vortax_*.changes | tee /tmp/b/lintian.txt
+
+      - name: Install the built package and run it
+        run: |
+          apt-get install -y /tmp/b/vortax_*_all.deb
+          vortax --version
+          vortax doctor
+          vortax selftest
+          vortax selftest --boot --timeout 180
+          # The package must *contain* all of these. (dpkg -L is the package's file list; container images such as
+          # ubuntu:24.04 are minimized and tell dpkg not to unpack man pages, so the file may be absent on disk.)
+          missing=""
+          for f in /usr/share/man/man1/vortax.1.gz \
+                   /usr/share/bash-completion/completions/vortax \
+                   /usr/lib/systemd/user/vortax-dashboard.service \
+                   /usr/share/doc/vortax/copyright; do
+            if dpkg -L vortax | grep -qx "$f"; then echo "packaged: $f"; else echo "NOT IN PACKAGE: $f"; missing=1; fi
+          done
+          [ -z "$missing" ]
+          # These are not excluded by minimized images, so they must also be on disk.
+          test -f /usr/share/bash-completion/completions/vortax
+          test -f /usr/lib/systemd/user/vortax-dashboard.service
+          test -f /usr/share/doc/vortax/copyright
+          if [ -f /usr/share/man/man1/vortax.1.gz ]; then echo "man page installed"; else echo "man page not unpacked here (image excludes man pages); it is in the package"; fi
+          sh debian/tests/smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debian-source-${{ strategy.job-index }}
+          path: |
+            /tmp/b/*.deb
+            /tmp/b/*.dsc
+            /tmp/b/*.changes
+            /tmp/b/*.buildinfo
+            /tmp/b/*.tar.*
+            /tmp/b/lintian.txt
+
+  one-command-install:
+    name: install.sh against a local signed repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the package and a signed throwaway repository
+        run: |
+          MAINTAINER="Vortax CI <ci@users.noreply.github.com>" packaging/build-deb.sh
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          gpg --batch --passphrase '' --quick-gen-key "Vortax CI <ci@example.invalid>" ed25519 sign never
+          export GPG_KEY_ID="$(gpg --list-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          REPO_URL=http://127.0.0.1:8099 packaging/make-apt-repo.sh dist /tmp/apt
+          grep -q "http://127.0.0.1:8099/install.sh" /tmp/apt/index.html
+
+      - name: Run the installer exactly as a user would (twice), then uninstall
+        run: |
+          (cd /tmp/apt && exec python3 -m http.server 8099 --bind 127.0.0.1 > /tmp/http.log 2>&1) &
+          sleep 1
+          run_installer() { curl -fsSL http://127.0.0.1:8099/install.sh | sudo VORTAX_REPO_URL=http://127.0.0.1:8099 sh; }
+          run_installer
+          vortax --version
+          vortax doctor
+          cat /etc/apt/sources.list.d/vortax.list
+          run_installer          # a second run must be harmless
+          sudo apt-get remove -y vortax
+          ! command -v vortax
+          sudo apt-get install -y vortax     # still resolvable from the repository it configured
+          vortax --version
